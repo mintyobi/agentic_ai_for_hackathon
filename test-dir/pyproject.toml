@@ -1,0 +1,38 @@
+[project]
+name = "agent-first-meeting"
+version = "0.1.0"
+description = "初回面談向け：類似事例検索・アポ資料生成エージェント"
+requires-python = ">=3.11"
+
+dependencies = [
+    "fastapi",          # WebAPI フレームワーク
+    "uvicorn",          # FastAPI を動かすサーバー
+    "anthropic",        # Claude API
+    "langchain",        # エージェント構築
+    "sqlalchemy",       # DB操作
+    "psycopg2-binary",  # PostgreSQL 接続
+    "pydantic-settings", # 環境変数の管理
+    "alembic",          # DB マイグレーション
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",           # テストフレームワーク
+    "pytest-asyncio",   # 非同期テスト対応
+    "httpx",            # FastAPI テスト用クライアント
+    "ruff",             # コードフォーマッター・Linter
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]         # src/ 配下をパッケージとして認識させる
+
+[tool.ruff]
+line-length = 88        # 1行の最大文字数
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"] # エラー・未使用変数・import順序をチェック
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]   # テストの対象ディレクトリ
+asyncio_mode = "auto"   # 非同期テストを自動認識
