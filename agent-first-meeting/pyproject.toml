@@ -1,0 +1,40 @@
+[project]
+name = "agent-first-meeting"
+version = "0.1.0"
+description = "初回面談向け：類似事例検索・アポ資料生成エージェント"
+requires-python = ">=3.11"
+
+dependencies = [
+    "fastapi",            # WebAPI フレームワーク
+    "uvicorn",            # FastAPI を動かすサーバー
+    "sse-starlette",      # エージェント思考プロセスの SSE ストリーミング
+    "semantic-kernel",    # エージェントオーケストレーション
+    "openai",             # Foundry エンドポイント（OpenAI 互換）クライアント
+    "azure-cosmos",       # Cosmos DB（顧客・面談・事例＋vector search）
+    "azure-storage-blob", # 生成 PowerPoint のアップロード先
+    "azure-identity",     # Azure 認証（Managed Identity / DefaultAzureCredential）
+    "python-pptx",        # PowerPoint 資料生成
+    "pydantic-settings",  # 環境変数の管理
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",            # テストフレームワーク
+    "pytest-asyncio",    # 非同期テスト対応
+    "httpx",             # FastAPI テスト用クライアント
+    "ruff",              # コードフォーマッター・Linter
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]          # src/ 配下をパッケージとして認識させる
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
