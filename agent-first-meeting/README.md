@@ -7,7 +7,7 @@
 営業担当者が顧客情報を入力すると、社内に蓄積された類似事例を検索し、初回アポ資料（PowerPoint）を自動生成します。
 
 - **エージェント基盤**: Azure AI Foundry + Semantic Kernel（Python, single-agent, auto function calling）
-- **LLM**: Claude Sonnet 4.6（Foundry 経由でデプロイ）
+- **LLM**: GPT-4.1（Azure OpenAI on Foundry にデプロイ）
 - **埋め込みモデル**: text-embedding-3-large
 - **データストア**: Azure Cosmos DB（顧客・面談・事例 + Vector Search）
 - **資料生成**: python-pptx（MVP は表紙1枚のみ）
@@ -28,6 +28,12 @@ agent-first-meeting/
 ```
 
 ## セットアップ
+
+### 0. Azure リソースの準備
+
+Foundry / Cosmos DB / Blob Storage を Azure 上に作成します。手順は [docs/azure_setup.md](docs/azure_setup.md) を参照。
+
+### 1. ローカル環境
 
 ```bash
 # 仮想環境を作成
