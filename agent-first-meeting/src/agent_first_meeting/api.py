@@ -3,7 +3,7 @@ import json
 import re
 from typing import AsyncGenerator
 
-PPTX_URL_PATTERN = re.compile(r"https://[^\s)\]」]+?\.pptx")
+PPTX_URL_PATTERN = re.compile(r"https://[^\s)\]」]+?\.pptx(?:\?[^\s)\]」]*)?")
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
