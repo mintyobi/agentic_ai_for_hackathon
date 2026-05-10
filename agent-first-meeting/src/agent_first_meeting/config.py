@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     # Azure Blob Storage
     blob_account_url: str
     blob_container: str = "generated-documents"
+    blob_account_key: str | None = None  # 空なら DefaultAzureCredential を使う
 
     # App
     app_log_level: str = "INFO"
