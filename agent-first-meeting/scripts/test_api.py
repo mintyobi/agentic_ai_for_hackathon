@@ -12,7 +12,7 @@ REQUEST_BODY = {
     "scale": "中小企業",
     "knownInfo": "DX 推進したいが何から手を付けるか不明。"
     "ベテラン技術者の高齢化で技能継承も気がかり。",
-    "salesperson": "ともや",
+    "salesperson": "佐々木",
 }
 
 

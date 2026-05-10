@@ -12,7 +12,7 @@
   "industry": "製造業",
   "scale": "中小企業",
   "knownInfo": "DX推進したいが何から手を付けるか不明",
-  "salesperson": "ともや"
+  "salesperson": "佐々木"
 }
 ```
 

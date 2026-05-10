@@ -1,14 +1,18 @@
 """PowerPoint 生成プラグイン (python-pptx + Azure Blob)."""
 import uuid
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import Annotated
 
 from azure.identity import DefaultAzureCredential
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import BlobClient, BlobSasPermissions, BlobServiceClient, generate_blob_sas
 from pptx import Presentation
 from semantic_kernel.functions import kernel_function
 
 from agent_first_meeting.config import settings
+
+
+SAS_EXPIRY_HOURS = 24
 
 
 def _make_blob_service_client() -> BlobServiceClient:
@@ -27,9 +31,30 @@ class DocumentGenPlugin:
     """表紙 1 枚の PowerPoint を生成し Blob にアップロードする SK プラグイン."""
 
     def __init__(self) -> None:
-        self._container = _make_blob_service_client().get_container_client(
+        self._blob_service = _make_blob_service_client()
+        self._container = self._blob_service.get_container_client(
             settings.blob_container
         )
+
+    def _build_download_url(self, blob_client: BlobClient) -> str:
+        """アップロードした Blob のダウンロード URL を返す.
+
+        - blob_account_key がある場合：account-key SAS を付与した時限 URL
+        - 無い場合（Managed Identity 想定）：素の URL を返す
+          ※ 本番では get_user_delegation_key() ベースの SAS に置換予定
+        """
+        if not settings.blob_account_key:
+            return blob_client.url
+
+        sas_token = generate_blob_sas(
+            account_name=self._blob_service.account_name,
+            container_name=settings.blob_container,
+            blob_name=blob_client.blob_name,
+            account_key=settings.blob_account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=datetime.now(timezone.utc) + timedelta(hours=SAS_EXPIRY_HOURS),
+        )
+        return f"{blob_client.url}?{sas_token}"
 
     @kernel_function(
         description=(
@@ -59,4 +84,4 @@ class DocumentGenPlugin:
         blob_name = f"proposals/{uuid.uuid4().hex}.pptx"
         blob_client = self._container.get_blob_client(blob_name)
         blob_client.upload_blob(buf.getvalue(), overwrite=True)
-        return blob_client.url
+        return self._build_download_url(blob_client)
