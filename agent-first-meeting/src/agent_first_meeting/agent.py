@@ -1,0 +1,67 @@
+"""初回面談エージェントのファクトリ."""
+from semantic_kernel.agents import ChatCompletionAgent
+from semantic_kernel.connectors.ai.function_choice_behavior import (
+    FunctionChoiceBehavior,
+)
+from semantic_kernel.connectors.ai.open_ai import (
+    AzureChatCompletion,
+    OpenAIChatPromptExecutionSettings,
+)
+from semantic_kernel.functions import KernelArguments
+
+from agent_first_meeting.config import settings
+from agent_first_meeting.tools.case_search import CaseSearchPlugin
+from agent_first_meeting.tools.customer_history import CustomerHistoryPlugin
+from agent_first_meeting.tools.document_gen import DocumentGenPlugin
+from agent_first_meeting.tools.meeting_record import MeetingRecordPlugin
+
+
+AGENT_INSTRUCTIONS = """\
+あなたは営業担当者の初回面談を支援する AI エージェントです。
+顧客情報を受け取ったら、以下の流れで動いてください。
+
+1. **get_customer_history** で過去の取引履歴を確認する
+   - 既存顧客の場合は前回までの outcomes / nextActions を踏まえて提案を組み立てる
+   - 新規顧客（customer=null）の場合は次のステップへ
+2. **search_similar_cases** で社内に蓄積された類似事例を最大 3 件取得する
+   （クエリは顧客の業界・規模・課題感を含めた自然文で組み立ててください）
+3. 顧客情報・履歴・類似事例を踏まえて、初回提案資料の表紙タイトルを 1 つ考案する
+   - 顧客の業界・規模・課題感が伝わる
+   - 類似事例の成果（例: 30%効率化）に触れると説得力が増す
+4. **generate_pptx** で表紙だけの提案資料を作成する
+5. **save_meeting_record** で生成資料と次回アクションを meetings コンテナに保存する
+   （これが follow-up エージェントへの引き継ぎ点）
+6. 最後にユーザー（営業担当者）に向けて、以下を簡潔にレポートする
+   - 履歴の有無（新規 or 既存）と参照した過去面談の概要（あれば）
+   - 生成した資料の URL
+   - 提案タイトルとその根拠（参照した事例）
+   - 初回面談で確認すべきポイント
+   - 保存された面談レコード ID
+
+ツールは必要なものを自分で判断して呼んでください。
+"""
+
+
+def build_agent() -> ChatCompletionAgent:
+    """auto function calling 有効化済みの ChatCompletionAgent を返す."""
+    execution_settings = OpenAIChatPromptExecutionSettings(
+        function_choice_behavior=FunctionChoiceBehavior.Auto(),
+    )
+
+    return ChatCompletionAgent(
+        service=AzureChatCompletion(
+            api_key=settings.azure_openai_api_key,
+            endpoint=settings.azure_openai_endpoint,
+            deployment_name=settings.azure_openai_chat_deployment,
+            api_version=settings.azure_openai_api_version,
+        ),
+        name="FirstMeetingAgent",
+        instructions=AGENT_INSTRUCTIONS,
+        plugins=[
+            CustomerHistoryPlugin(),
+            CaseSearchPlugin(),
+            DocumentGenPlugin(),
+            MeetingRecordPlugin(),
+        ],
+        arguments=KernelArguments(settings=execution_settings),
+    )
