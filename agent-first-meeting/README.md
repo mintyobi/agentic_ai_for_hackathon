@@ -71,7 +71,7 @@ Request:
   "industry": "製造業",
   "scale": "中小企業",
   "knownInfo": "DX推進したいが何から手を付けるか不明",
-  "salesperson": "山田"
+  "salesperson": "佐々木"
 }
 ```
 
