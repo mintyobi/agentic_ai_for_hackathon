@@ -51,7 +51,7 @@ with st.form("input_form"):
             "規模 *",
             ["大企業", "中堅企業", "中小企業", "スタートアップ"],
         )
-        salesperson = st.text_input("担当営業（任意）", placeholder="ともや")
+        salesperson = st.text_input("担当営業（任意）")
 
     known_info = st.text_area(
         "既知の課題感（任意）",
