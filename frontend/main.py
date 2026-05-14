@@ -46,12 +46,29 @@ with st.form("input_form"):
                 "その他",
             ],
         )
+        homepage_url = st.text_input(
+            "企業ホームページ URL（任意）",
+            placeholder="https://example.co.jp",
+        )
     with col2:
         scale = st.selectbox(
             "規模 *",
             ["大企業", "中堅企業", "中小企業", "スタートアップ"],
         )
         salesperson = st.text_input("担当営業（任意）")
+        meeting_status_label = st.selectbox(
+            "面談回数ステータス *",
+            ["初回", "2回目以降"],
+        )
+
+    st.markdown("**取引相手の情報（任意）**")
+    col3, col4, col5 = st.columns(3)
+    with col3:
+        contact_name = st.text_input("氏名", placeholder="山田 太郎")
+    with col4:
+        contact_department = st.text_input("部署", placeholder="経営企画部")
+    with col5:
+        contact_position = st.text_input("役職", placeholder="部長")
 
     known_info = st.text_area(
         "既知の課題感（任意）",
@@ -76,6 +93,11 @@ if submitted:
         "scale": scale,
         "knownInfo": known_info,
         "salesperson": salesperson,
+        "homepageUrl": homepage_url,
+        "contactName": contact_name,
+        "contactDepartment": contact_department,
+        "contactPosition": contact_position,
+        "meetingStatus": "first" if meeting_status_label == "初回" else "followup",
     }
 
     st.divider()
@@ -122,13 +144,22 @@ if submitted:
                         elif current_event == "message":
                             accumulated_text += data.get("text", "")
                         elif current_event == "done":
-                            if data.get("status") == "success":
-                                document_url = data.get("data", {}).get(
-                                    "documentUrl"
-                                )
-                                status.update(
-                                    label="生成完了 ✅", state="complete"
-                                )
+                            status_val = data.get("status")
+                            if status_val in ("success", "partial"):
+                                payload = data.get("data") or {}
+                                document_url = payload.get("documentUrl")
+                                warnings = payload.get("warnings") or []
+                                if status_val == "partial":
+                                    status.update(
+                                        label="生成完了（警告あり） ⚠️",
+                                        state="complete",
+                                    )
+                                else:
+                                    status.update(
+                                        label="生成完了 ✅", state="complete"
+                                    )
+                                for w in warnings:
+                                    st.warning(w)
                             else:
                                 err = data.get("error") or {}
                                 status.update(label="エラー", state="error")

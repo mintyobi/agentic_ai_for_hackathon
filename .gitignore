@@ -16,3 +16,6 @@ htmlcov/
 
 # OS
 .DS_Store
+
+# Claude Code (session cache, worktree metadata)
+.claude/

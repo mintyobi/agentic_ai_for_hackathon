@@ -15,13 +15,15 @@ dependencies = [
     "azure-identity",     # Azure 認証（Managed Identity / DefaultAzureCredential）
     "python-pptx",        # PowerPoint 資料生成
     "pydantic-settings",  # 環境変数の管理
+    "httpx",              # WebFetchPlugin が顧客 HP を取得するために使用
+    "beautifulsoup4",     # WebFetchPlugin が HTML を本文テキスト化するために使用
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",            # テストフレームワーク
     "pytest-asyncio",    # 非同期テスト対応
-    "httpx",             # FastAPI テスト用クライアント
+    # httpx は本番 deps に入っているので dev では不要
     "ruff",              # コードフォーマッター・Linter
 ]
 
