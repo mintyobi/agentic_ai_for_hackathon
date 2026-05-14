@@ -1,12 +1,29 @@
-"""面談レコードを Cosmos DB meetings コンテナに保存するプラグイン."""
-import uuid
+"""面談レコードを Cosmos DB meetings コンテナに保存するプラグイン.
+
+並行制御:
+- companyId は会社名から決定的に導出（SHA1 先頭12文字）。
+  → 同じ会社名なら必ず同じ ID になるので「並行 upsert で別 ID」問題が起きない。
+- meeting の id は f"mtg_{company_id}_{round:04d}" で一意性が保証される。
+  並行 create で 409 が返ったら round を +1 してリトライする。
+"""
+import logging
 from datetime import datetime, timezone
 from typing import Annotated
 
 from azure.cosmos import CosmosClient
+from azure.cosmos.exceptions import CosmosResourceExistsError
 from semantic_kernel.functions import kernel_function
 
+from agent_first_meeting._company_id import deterministic_company_id
 from agent_first_meeting.config import settings
+
+logger = logging.getLogger(__name__)
+
+_MAX_ROUND_RETRY = 50
+
+
+def _meeting_doc_id(company_id: str, round_num: int) -> str:
+    return f"mtg_{company_id}_{round_num:04d}"
 
 
 class MeetingRecordPlugin:
@@ -21,31 +38,24 @@ class MeetingRecordPlugin:
         self._customers = db.get_container_client("customers")
         self._meetings = db.get_container_client("meetings")
 
-    def _resolve_company_id(self, company_name: str) -> str:
-        existing = list(
-            self._customers.query_items(
-                query="SELECT * FROM c WHERE c.companyName = @name",
-                parameters=[{"name": "@name", "value": company_name}],
-                enable_cross_partition_query=True,
-            )
-        )
-        if existing:
-            return existing[0]["companyId"]
-
-        new_id = f"cus_{uuid.uuid4().hex[:12]}"
+    def _ensure_customer(self, company_name: str) -> str:
+        """会社マスタを upsert（決定的 ID で衝突を防ぐ）."""
+        company_id = deterministic_company_id(company_name)
         now_iso = datetime.now(timezone.utc).isoformat()
+        # 既存があれば updatedAt だけ更新、無ければ新規作成（どちらも upsert）
         self._customers.upsert_item(
             {
-                "id": new_id,
-                "companyId": new_id,
-                "companyName": company_name,
+                "id": company_id,
+                "companyId": company_id,
+                "companyName": company_name.strip(),
                 "createdAt": now_iso,
                 "updatedAt": now_iso,
             }
         )
-        return new_id
+        return company_id
 
-    def _next_round(self, company_id: str) -> int:
+    def _estimate_initial_round(self, company_id: str) -> int:
+        """次の round 番号の初期推定値を返す。並行時は create_item の 409 でリトライされる."""
         rows = list(
             self._meetings.query_items(
                 query="SELECT VALUE COUNT(1) FROM c WHERE c.companyId = @id",
@@ -73,21 +83,40 @@ class MeetingRecordPlugin:
             "初回面談で確認すべきポイントや次回アクション項目のリスト",
         ],
     ) -> Annotated[str, "保存された meetings ドキュメントの ID"]:
-        company_id = self._resolve_company_id(company_name)
-        round_num = self._next_round(company_id)
+        company_id = self._ensure_customer(company_name)
         now_iso = datetime.now(timezone.utc).isoformat()
+        initial_round = self._estimate_initial_round(company_id)
 
-        record = {
-            "id": f"mtg_{uuid.uuid4().hex}",
-            "companyId": company_id,
-            "round": round_num,
-            "scheduledAt": now_iso,
-            "status": "scheduled",
-            "preMeetingDocumentUrl": document_url,
-            "proposedTitle": proposed_title,
-            "outcomes": None,
-            "nextActions": next_actions,
-            "createdAt": now_iso,
-        }
-        self._meetings.upsert_item(record)
-        return record["id"]
+        # round 番号を +1 しつつリトライ（並行 create で 409 が返ったら次の番号に進む）
+        for round_num in range(initial_round, initial_round + _MAX_ROUND_RETRY):
+            record = {
+                "id": _meeting_doc_id(company_id, round_num),
+                "companyId": company_id,
+                "round": round_num,
+                "scheduledAt": now_iso,
+                "status": "scheduled",
+                "preMeetingDocumentUrl": document_url,
+                "proposedTitle": proposed_title,
+                "outcomes": None,
+                "nextActions": next_actions,
+                "createdAt": now_iso,
+            }
+            try:
+                self._meetings.create_item(record)
+            except CosmosResourceExistsError:
+                logger.info(
+                    "MeetingRecordPlugin: round %d already exists for %s, retrying",
+                    round_num, company_id,
+                )
+                continue
+
+            logger.info(
+                "MeetingRecordPlugin: saved id=%s company_id=%s round=%d",
+                record["id"], company_id, round_num,
+            )
+            return record["id"]
+
+        raise RuntimeError(
+            f"failed to allocate meeting round number for {company_id} "
+            f"after {_MAX_ROUND_RETRY} attempts"
+        )

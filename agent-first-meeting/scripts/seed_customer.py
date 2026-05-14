@@ -2,20 +2,28 @@
 
 「既存顧客」シナリオで get_customer_history が履歴を返せるよう、
 1 件の customer + 過去 1 件の meeting を seed する。
+
+companyId は `_deterministic_company_id` から動的に計算するので、
+MeetingRecordPlugin が後から save しても同じ companyId で続きの round
+が積まれる。
 """
 import sys
 
 from azure.cosmos import CosmosClient
 
+from agent_first_meeting._company_id import deterministic_company_id
 from agent_first_meeting.config import settings
 
 sys.stdout.reconfigure(encoding="utf-8")
 
 
+COMPANY_NAME = "株式会社既存お得意様"
+COMPANY_ID = deterministic_company_id(COMPANY_NAME)
+
 CUSTOMER = {
-    "id": "cus_existing01",
-    "companyId": "cus_existing01",
-    "companyName": "株式会社既存お得意様",
+    "id": COMPANY_ID,
+    "companyId": COMPANY_ID,
+    "companyName": COMPANY_NAME,
     "industry": "製造業",
     "scale": "中小企業",
     "knownChallenges": ["人材不足", "原材料費高騰", "技能継承"],
@@ -25,8 +33,8 @@ CUSTOMER = {
 }
 
 PRIOR_MEETING = {
-    "id": "mtg_prior01",
-    "companyId": "cus_existing01",
+    "id": f"mtg_{COMPANY_ID}_0001",
+    "companyId": COMPANY_ID,
     "round": 1,
     "scheduledAt": "2026-01-15T10:00:00Z",
     "status": "done",
