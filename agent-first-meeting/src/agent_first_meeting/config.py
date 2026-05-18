@@ -28,6 +28,13 @@ class Settings(BaseSettings):
 
     # App
     app_log_level: str = "INFO"
+    # CORS で受け付けるオリジン（カンマ区切り）。本番では Streamlit / フロントの
+    # 実ドメインに絞ること。"*" を入れると wildcard 許可（開発時のみ推奨）。
+    cors_allow_origins: str = "http://localhost:8501,http://127.0.0.1:8501"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
 
 
 settings = Settings()
