@@ -11,7 +11,10 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from azure.cosmos import CosmosClient
-from azure.cosmos.exceptions import CosmosResourceExistsError
+from azure.cosmos.exceptions import (
+    CosmosResourceExistsError,
+    CosmosResourceNotFoundError,
+)
 from semantic_kernel.functions import kernel_function
 
 from agent_first_meeting._company_id import deterministic_company_id
@@ -39,19 +42,37 @@ class MeetingRecordPlugin:
         self._meetings = db.get_container_client("meetings")
 
     def _ensure_customer(self, company_name: str) -> str:
-        """会社マスタを upsert（決定的 ID で衝突を防ぐ）."""
+        """会社マスタを upsert（決定的 ID で衝突を防ぐ）.
+
+        既存顧客の場合は createdAt や seed で投入された industry / scale /
+        knownChallenges などのフィールドを保持し、updatedAt のみを差し替える。
+        以前は upsert に渡したフィールドが既存ドキュメントを丸ごと置換していたため、
+        save_meeting_record が呼ばれる度に createdAt や属性情報が失われていた。
+        """
         company_id = deterministic_company_id(company_name)
         now_iso = datetime.now(timezone.utc).isoformat()
-        # 既存があれば updatedAt だけ更新、無ければ新規作成（どちらも upsert）
-        self._customers.upsert_item(
-            {
+        try:
+            existing = self._customers.read_item(
+                item=company_id, partition_key=company_id
+            )
+        except CosmosResourceNotFoundError:
+            existing = None
+
+        if existing is None:
+            record = {
                 "id": company_id,
                 "companyId": company_id,
                 "companyName": company_name.strip(),
                 "createdAt": now_iso,
                 "updatedAt": now_iso,
             }
-        )
+        else:
+            record = {**existing, "updatedAt": now_iso}
+            # 会社名の表記揺れがあれば最新を反映、createdAt は必ず維持
+            record["companyName"] = company_name.strip()
+            record.setdefault("createdAt", now_iso)
+
+        self._customers.upsert_item(record)
         return company_id
 
     def _estimate_initial_round(self, company_id: str) -> int:

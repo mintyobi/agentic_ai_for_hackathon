@@ -199,6 +199,10 @@ pytest tests/ -v
 | `tests/test_pptx_builder.py` | `_pptx_builder.build_presentation_bytes` の 6 スライド構造 | `python-pptx` のみ |
 | `tests/test_schemas.py` | `GenerateRequest` バリデーション / `to_user_message` 整形 | `pydantic` のみ |
 | `tests/test_html_to_text.py` | `_html_to_text.strip_html` の HTML 整形 | `beautifulsoup4` のみ |
+| `tests/test_url_safety.py` | `_url_safety.is_safe_public_url` の SSRF ガード | 標準ライブラリのみ |
+| `tests/test_web_fetch.py` | `_web_fetch_helpers` のストリーミング/Content-Type ガード | `httpx` のみ |
+| `tests/test_role_classifier.py` | 役職カテゴリ分類 | 標準ライブラリのみ |
+| `tests/test_meeting_id.py` | `_company_id` の決定的 ID 生成 | 標準ライブラリのみ |
 
 ## API
 
