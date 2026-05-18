@@ -212,42 +212,74 @@ gitGraph
 
 ### 前提条件
 
-- Python 3.11 以上
-- Docker / Docker Compose
+- **Python 3.12** 動作確認済み（3.11 以上であれば動く想定）
+- [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) (`az`) v2.60+ ＋ 有効な Azure サブスクリプション
+- （統合フェーズで使用）Docker / Docker Compose
 
 ### セットアップ手順
 
-```bash
-# 1. 環境変数を設定（仮）
-cp .env.example .env
-# .env を開いてAPIキー等を入力
- 
-# 2. 各エージェントの仮想環境を作成・依存インストール
+```powershell
+# 1. Azure リソースを Azure CLI で一括構築
+#    詳細は agent-first-meeting/docs/azure_setup.md を参照
+az login
+# ↑ ガイドの「0. 準備」→「4. Blob Storage」までを順にコピペ実行
+#   Foundry / Cosmos DB（vector search 込み）/ Blob Storage が立ち上がる
+
+# 2. .env を作成（ガイドの「5. .env への反映」で値を流し込む）
+cp agent-first-meeting/.env.example agent-first-meeting/.env
+# Azure CLI で取得した値をエディタで貼り付け
+
+# 3. agent-first-meeting の仮想環境＋依存インストール
 cd agent-first-meeting
 python -m venv .venv
-source .venv/bin/activate   
+.\.venv\Scripts\Activate.ps1     # macOS/Linux: source .venv/bin/activate
 pip install -e ".[dev]"
-cd ..
- 
-cd agent-follow-up
+
+# 4. Azure リソースへのスモークテスト＆シードデータ投入
+python scripts/check_foundry.py        # Foundry 疎通
+python scripts/seed_cases.py           # cases コンテナへ投入
+python scripts/seed_customer.py        # customers / meetings へ投入
+python scripts/check_vector_search.py  # vector 検索の動作確認
+python scripts/check_pptx_blob.py      # Blob アップロードの動作確認
+
+# 5. API サーバー起動
+python scripts/run_server.py           # http://127.0.0.1:8000
+
+# 6. 別ターミナルで Streamlit フロントエンドを起動
+cd ../frontend
 python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-cd ..
- 
-# 4. Dockerで全体起動（統合時）
-docker-compose up --build
+.\.venv\Scripts\Activate.ps1
+pip install -e .
+streamlit run main.py                  # http://localhost:8501
 ```
 
+> 📘 Azure リソースの作成（`az group create` から `az role assignment create` まで）は **[agent-first-meeting/docs/azure_setup.md](agent-first-meeting/docs/azure_setup.md)** にコピペ可能な PowerShell コマンドで一式まとめてあります。
+
 ### 環境変数一覧
- 
+
+`.env` の全項目とその取得方法は [agent-first-meeting/docs/azure_setup.md §5](agent-first-meeting/docs/azure_setup.md#5-env-への反映) を参照。主なキーは以下：
+
 | 変数名 | 説明 | 必須 |
 |---|---|---|
-| `***_API_KEY` | Model APIキー | ✅ |
-| `FIRST_MEETING_API_URL` | 初回エージェントのURL | ✅ |
-| `FOLLOW_UP_API_URL` | フォローアップエージェントのURL | ✅ |
- 
+| `AZURE_OPENAI_ENDPOINT` / `AZURE_OPENAI_API_KEY` | Foundry (Azure OpenAI) | ✅ |
+| `AZURE_OPENAI_CHAT_DEPLOYMENT` | チャットモデルのデプロイ名（推奨 `gpt-4o`。`gpt-4.1` のクオータがあれば可） | ✅ |
+| `AZURE_OPENAI_EMBEDDING_DEPLOYMENT` | 埋め込みモデルのデプロイ名（既定 `text-embedding-3-large`） | ✅ |
+| `COSMOS_ENDPOINT` / `COSMOS_KEY` | Cosmos DB 接続情報 | ✅ |
+| `COSMOS_DATABASE` | データベース名（既定 `sales-agent`） | ✅ |
+| `BLOB_ACCOUNT_URL` / `BLOB_CONTAINER` | 生成 pptx の保存先 | ✅ |
+| `BLOB_ACCOUNT_KEY` | SAS 付きダウンロード URL を発行したい場合のみ | 任意 |
+| `FIRST_MEETING_API_URL` | フロントエンドが叩く API URL（既定 `http://127.0.0.1:8000/api/first-meeting/generate`） | 任意 |
+
 > ⚠️ `.env` は絶対にGitにコミットしないでください。`.env.example`（ダミー値入り）のみをGitで管理します。
+
+### 後片付け
+
+ハッカソン終了後はリソースグループごと削除すれば課金が止まります：
+
+```powershell
+# azure_setup.md §0-3 で定義した $RG をそのまま使う
+az group delete --name $RG --yes --no-wait
+```
  
 ---
  
