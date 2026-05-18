@@ -79,15 +79,21 @@ sequenceDiagram
     participant Cosmos as Cosmos DB
     participant Emb as text-embedding-3-large
     participant Blob as Blob Storage
+    participant Web as 顧客 HP (外部)
 
     Sales->>UI: 会社名/業種/規模/課題感を入力
     UI->>API: POST /api/first-meeting/generate
     API->>Agent: invoke_stream(user_message)
 
-    Note over Agent: auto function calling
+    Note over Agent: auto function calling<br/>(ツール選択順は LLM が都度判断)
 
     Agent->>Cosmos: get_customer_history(companyName)
     Cosmos-->>Agent: {customer, meetings[]} or null
+
+    opt 顧客 HP URL が入力されている場合
+        Agent->>Web: fetch_url_text(url)<br/>SSRF / リダイレクト各ホップ検証
+        Web-->>Agent: {ok, final_url, text} ≤ 4000 字
+    end
 
     Agent->>Emb: embeddings.create(query, dim=1536)
     Emb-->>Agent: vector[1536]
@@ -96,7 +102,7 @@ sequenceDiagram
 
     Note over Agent: 履歴 + 類似事例から<br/>提案タイトル生成
 
-    Agent->>Blob: generate_pptx(title, subtitle)
+    Agent->>Blob: generate_pptx(cover_title, cover_subtitle,<br/>industry_body, position_body)<br/>→ 6 スライド PPTX を Blob にアップロード
     Blob-->>Agent: SAS 付き URL (24h)
 
     Agent->>Cosmos: save_meeting_record<br/>(新規なら customers にも upsert)
@@ -109,16 +115,23 @@ sequenceDiagram
 
 ## エージェントの判断ロジック
 
+> 以下は **標準フロー（システムプロンプトで指示している期待動作）**。
+> 実際のツール呼び出し順・回数は `FunctionChoiceBehavior.Auto` により LLM が毎ターン判断する。
+> たとえば HP URL が未入力なら `fetch_url_text` はスキップされる。
+
 ```mermaid
 flowchart TD
     Start([顧客情報受領]) --> H[get_customer_history]
     H --> Q{customer == null?}
-    Q -- "新規" --> S[search_similar_cases<br/>業界/規模/課題で自然文検索]
-    Q -- "既存" --> S2["前回 outcomes / nextActions を加味<br/>+ search_similar_cases"]
-    S --> T[提案タイトルを 1 つ考案<br/>事例の成果に言及]
-    S2 --> T
-    T --> G[generate_pptx<br/>表紙のみの PowerPoint]
-    G --> R[save_meeting_record<br/>outcomes=null で書き出し]
+    Q -- "新規" --> WF{HP URL あり?}
+    Q -- "既存" --> WF
+    WF -- "Yes" --> W[fetch_url_text<br/>SSRF ガード経由で本文取得]
+    WF -- "No" --> S
+    W --> S
+    S[search_similar_cases<br/>業界/規模/課題で自然文検索<br/>TOP 3]
+    S --> T[提案タイトル + 業界本文 + 役職本文<br/>を考案<br/>（既存顧客なら前回 outcomes / nextActions を加味）]
+    T --> G[generate_pptx<br/>6 スライド構成<br/>（表紙/目次/業界/役職/商品/費用）]
+    G --> R[save_meeting_record<br/>outcomes=null で書き出し<br/>round 自動採番]
     R --> Report["ユーザーへ報告<br/>履歴有無 / URL / タイトル根拠 /<br/>確認ポイント / レコード ID"]
     Report --> End([follow-up エージェントへ引き継ぎ])
 ```
