@@ -1,0 +1,11 @@
+{
+    "indexingMode": "consistent",
+    "includedPaths": [{ "path": "/*" }],
+    "excludedPaths": [{ "path": "/embedding/*" }],
+    "vectorIndexes": [
+        {
+            "path": "/embedding",
+            "type": "quantizedFlat"
+        }
+    ]
+}

@@ -1,0 +1,16 @@
+[project]
+name = "sales-knowledge-ingest"
+version = "0.1.0"
+description = "営業資料ナレッジ投入スクリプト for Azure Cosmos DB"
+requires-python = ">=3.11"
+
+dependencies = [
+    "azure-cosmos>=4.7.0",
+    "openai>=1.30.0",
+    "python-dotenv>=1.0.0",
+    "python-pptx>=1.0.0",
+    "langchain-text-splitters>=0.2.0",
+]
+
+[tool.uv]
+dev-dependencies = []
