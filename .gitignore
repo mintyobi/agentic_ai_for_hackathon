@@ -19,3 +19,4 @@ htmlcov/
 
 # Claude Code (session cache, worktree metadata)
 .claude/
+*.sh
