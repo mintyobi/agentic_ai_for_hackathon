@@ -44,6 +44,29 @@ event: done         data: {
 }
 ```
 
+event: thought      data: {"step":"類似事例を探します"}
+event: tool         data: {"name":"search_similar_cases","args":{...}}
+event: tool_result  data: {"hits": 5}
+event: thought      data: {"step":"アウトラインを作成中"}
+...
+event: done         data: {
+  "status": "success",
+  "data": {
+    "documentUrl": "https://....pptx",
+    "meetingId": "mtg_xxx",
+    "caseReferences": [
+      {
+        "id": "doc_001",
+        "title": "技能継承課題に対する AI ナレッジベース導入",
+        "type": "proposal",
+        "industry": "製造業"
+      }
+    ],
+    "generatedAt": "2026-05-09T..."
+  },
+  "error": null
+}
+
 ### エラー時
 
 ```json

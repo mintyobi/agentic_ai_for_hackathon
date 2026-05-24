@@ -52,6 +52,7 @@
 ### 0-1. ログインとサブスクリプション確認
 
 ```powershell
+# Windows & Mac
 az login
 az account show --query "{name:name, id:id, user:user.name}" -o table
 ```
@@ -59,12 +60,14 @@ az account show --query "{name:name, id:id, user:user.name}" -o table
 複数サブスクリプションがある場合は明示的に切り替え：
 
 ```powershell
+# Windows & Mac
 az account set --subscription "<subscription-id-or-name>"
 ```
 
 ### 0-2. プロバイダー登録（初回のみ）
 
 ```powershell
+# Windows & Mac
 az provider register --namespace Microsoft.CognitiveServices
 az provider register --namespace Microsoft.DocumentDB
 az provider register --namespace Microsoft.Storage
@@ -83,6 +86,7 @@ az provider register --namespace Microsoft.Storage
 リソースを作る前に必ずチェックしてください。
 
 ```powershell
+# Windows
 # eastus2 でリージョン提供されているモデル名・バージョンの一覧
 az cognitiveservices model list --location eastus2 `
   --query "[?model.name=='gpt-4.1' || model.name=='gpt-4o' || model.name=='text-embedding-3-large'].{name:model.name, version:model.version}" `
@@ -93,6 +97,22 @@ az cognitiveservices usage list --location eastus2 -o json `
   | ConvertFrom-Json `
   | ? { $_.limit -gt 0 -and ($_.name.value -like "*gpt-4*" -or $_.name.value -like "*embedding-3-large*") } `
   | % { "{0,-55} limit={1}" -f $_.name.value, $_.limit }
+```
+
+```bash
+# Mac & Linux
+az cognitiveservices model list --location eastus2 \
+  --query "[?model.name=='gpt-4.1' || model.name=='gpt-4o' || model.name=='text-embedding-3-large'].{name:model.name, version:model.version}" \
+  -o table
+
+az cognitiveservices usage list --location eastus2 -o json \
+  | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+filtered = [x for x in data if x['limit'] > 0 and ('gpt-4' in x['name']['value'] or 'embedding-3-large' in x['name']['value'])]
+for x in filtered:
+    print(f\"{x['name']['value']:<55} limit={x['limit']}\")
+"
 ```
 
 > 🛑 **本ガイドは当初 `gpt-4.1` を想定していますが、`OpenAI.GlobalStandard.gpt-4.1` の limit が 0 のサブスクリプションが多数あります。** その場合は §2-2 で `gpt-4o` を代わりにデプロイしてください（コードは `.env` でモデル名を抽象化しているため変更箇所は 1 行）。
@@ -118,11 +138,35 @@ $BLOB_CONTAINER = "generated-documents"
 
 > 💡 同じシェルセッションを閉じる前に最後まで通すか、`.ps1` スクリプトとして保存しておくと楽です。
 
+#### Mac の場合
+
+```sh
+LOCATION="eastus2"
+RG="rg-sales-agent"
+
+AOAI_NAME="aoai-sales-agent-<unique>"   # Azure OpenAI アカウント名
+CHAT_DEPLOY="gpt-4o"                    # チャットデプロイ名（.env と一致させる）。クオータがあれば gpt-4.1 でも可
+EMBED_DEPLOY="text-embedding-3-large"   # 埋め込みデプロイ名（.env と一致させる）
+
+COSMOS_NAME="cosmos-sales-agent-<unique>" # Cosmos DB アカウント名
+COSMOS_DB="sales-agent"                   # データベース名
+
+STORAGE_NAME="stsalesagent<unique>"     # Storage アカウント名（小文字英数のみ・24文字以内）
+BLOB_CONTAINER="generated-documents"
+```
+
+💡 同じターミナルセッションを閉じる前に最後まで通すか、.sh ファイルとして保存しておくと楽です。
+
+```bash
+source setup.sh
+```
+
 ---
 
 ## 1. リソースグループ
 
 ```powershell
+# Windows & Mac
 az group create --name $RG --location $LOCATION
 ```
 
@@ -135,6 +179,7 @@ Foundry プロジェクトの実体は Azure OpenAI リソースなので、CLI 
 ### 2-1. Azure OpenAI アカウント作成
 
 ```powershell
+# Windows
 az cognitiveservices account create `
   --name $AOAI_NAME `
   --resource-group $RG `
@@ -142,6 +187,18 @@ az cognitiveservices account create `
   --kind OpenAI `
   --sku S0 `
   --custom-domain $AOAI_NAME `
+  --yes
+```
+
+```bash
+# Mac & Linux
+az cognitiveservices account create \
+  --name $AOAI_NAME \
+  --resource-group $RG \
+  --location $LOCATION \
+  --kind OpenAI \
+  --sku S0 \
+  --custom-domain $AOAI_NAME \
   --yes
 ```
 
@@ -154,6 +211,7 @@ az cognitiveservices account create `
 #### 推奨：`gpt-4o`（多くの個人サブスクで `GlobalStandard` が即使える）
 
 ```powershell
+# Windows
 az cognitiveservices account deployment create `
   --name $AOAI_NAME `
   --resource-group $RG `
@@ -165,11 +223,25 @@ az cognitiveservices account deployment create `
   --sku-capacity 50
 ```
 
+```bash
+# Mac & Linux
+az cognitiveservices account deployment create \
+  --name $AOAI_NAME \
+  --resource-group $RG \
+  --deployment-name $CHAT_DEPLOY \
+  --model-name "gpt-4o" \
+  --model-version "2024-11-20" \
+  --model-format OpenAI \
+  --sku-name "GlobalStandard" \
+  --sku-capacity 50
+```
+
 #### `gpt-4.1` が引ける場合
 
 §0-3 で `OpenAI.GlobalStandard.gpt-4.1` の limit が正の値で表示されていれば、以下に差し替え可能です。`$CHAT_DEPLOY` を `"gpt-4.1"` に変更してから実行してください。
 
 ```powershell
+# Windows
 az cognitiveservices account deployment create `
   --name $AOAI_NAME `
   --resource-group $RG `
@@ -181,11 +253,25 @@ az cognitiveservices account deployment create `
   --sku-capacity 50
 ```
 
+```bash
+# Mac & Linux
+az cognitiveservices account deployment create \
+  --name $AOAI_NAME \
+  --resource-group $RG \
+  --deployment-name $CHAT_DEPLOY \
+  --model-name "gpt-4.1" \
+  --model-version "2025-04-14" \
+  --model-format OpenAI \
+  --sku-name "GlobalStandard" \
+  --sku-capacity 50
+```
+
 > 📝 個人 Azure サブスクリプションは Anthropic Claude / GPT-4.1 などプレミアムモデルが初期クオータ 0 のことが多く、本ガイドでは確実に動く `gpt-4o` を既定にしています。コードは `.env` で `AZURE_OPENAI_CHAT_DEPLOYMENT` を読むので、後日上位モデルのクオータが通れば 1 行変更で差し替え可能。
 
 ### 2-3. text-embedding-3-large のデプロイ
 
 ```powershell
+# Windows
 az cognitiveservices account deployment create `
   --name $AOAI_NAME `
   --resource-group $RG `
@@ -194,6 +280,18 @@ az cognitiveservices account deployment create `
   --model-version "1" `
   --model-format OpenAI `
   --sku-name "Standard" `
+  --sku-capacity 30
+```
+
+```bash
+az cognitiveservices account deployment create \
+  --name $AOAI_NAME \
+  --resource-group $RG \
+  --deployment-name $EMBED_DEPLOY \
+  --model-name "text-embedding-3-large" \
+  --model-version "1" \
+  --model-format OpenAI \
+  --sku-name "Standard" \
   --sku-capacity 30
 ```
 
@@ -212,6 +310,19 @@ Write-Host "AZURE_OPENAI_ENDPOINT=$AOAI_ENDPOINT"
 Write-Host "AZURE_OPENAI_API_KEY=$AOAI_KEY"
 ```
 
+```bash
+AOAI_ENDPOINT=$(az cognitiveservices account show \
+  --name $AOAI_NAME --resource-group $RG \
+  --query "properties.endpoint" -o tsv)
+
+AOAI_KEY=$(az cognitiveservices account keys list \
+  --name $AOAI_NAME --resource-group $RG \
+  --query "key1" -o tsv)
+
+echo "AZURE_OPENAI_ENDPOINT=$AOAI_ENDPOINT"
+echo "AZURE_OPENAI_API_KEY=$AOAI_KEY"
+```
+
 ---
 
 ## 3. Azure Cosmos DB for NoSQL
@@ -219,6 +330,7 @@ Write-Host "AZURE_OPENAI_API_KEY=$AOAI_KEY"
 ### 3-1. アカウント作成（Serverless + Vector Search 有効）
 
 ```powershell
+# Windows
 az cosmosdb create `
   --name $COSMOS_NAME `
   --resource-group $RG `
@@ -227,113 +339,158 @@ az cosmosdb create `
   --default-consistency-level Session
 ```
 
+```bash
+# Mac & Linux
+az cosmosdb create \
+  --name $COSMOS_NAME \
+  --resource-group $RG \
+  --locations regionName=$LOCATION failoverPriority=0 isZoneRedundant=False \
+  --capabilities EnableServerless EnableNoSQLVectorSearch \
+  --default-consistency-level Session
+```
+
 > 💡 Serverless はアイドル時のコストが 0 になります。Free Tier 割引は Provisioned 専用のため Serverless とは併用不可。Serverless の方が個人利用にはむしろ安く済みます。
 
 ### 3-2. データベース作成
 
 ```powershell
+# Windows
 az cosmosdb sql database create `
   --account-name $COSMOS_NAME `
   --resource-group $RG `
   --name $COSMOS_DB
 ```
 
-### 3-3. コンテナ 2 つを作成（普通のコンテナ）
-
-`customers` と `meetings` の 2 つを作ります。コード（`tools/customer_history.py` / `tools/meeting_record.py`）が参照するコンテナのみ作るのがポイント。
-
-```powershell
-az cosmosdb sql container create `
-  --account-name $COSMOS_NAME --resource-group $RG `
-  --database-name $COSMOS_DB `
-  --name customers --partition-key-path "/companyId"
-
-az cosmosdb sql container create `
-  --account-name $COSMOS_NAME --resource-group $RG `
-  --database-name $COSMOS_DB `
-  --name meetings --partition-key-path "/companyId"
+```bash
+# Mac & Linux
+az cosmosdb sql database create \
+  --account-name $COSMOS_NAME \
+  --resource-group $RG \
+  --name $COSMOS_DB
 ```
 
-### 3-4. `cases` コンテナを Vector Index 付きで作成（重要）
+### 3-3. コンテナ 3 つを作成（普通のコンテナ）
 
-> ⚠️ **Azure CLI からは vector embedding policy を設定できません。**
-> `az cosmosdb sql container create` は 2026 年 5 月時点で `--vector-embedding-policy` 引数を**サポートしていません**（`cosmosdb-preview` 拡張を入れても同じ）。
-> そのため、ARM REST API を `az rest` で直接叩いて作成します。
-
-#### 3-4-1. コンテナ定義 JSON を書き出す
-
-`Out-File -Encoding utf8` は PowerShell 5.1 では **BOM 付き** UTF-8 を出力し、`az rest --body @file` で稀に問題になります。`[System.IO.File]::WriteAllText` で BOM 無し UTF-8 として書き出します。
+`documents` / `chunks` / `templates` の3つを作成する。
 
 ```powershell
-$containerDef = @'
+# Windows
+az cosmosdb sql container create `
+  --account-name $COSMOS_NAME --resource-group $RG `
+  --database-name $COSMOS_DB `
+  --name documents --partition-key-path "/type"
+
+az cosmosdb sql container create `
+  --account-name $COSMOS_NAME --resource-group $RG `
+  --database-name $COSMOS_DB `
+  --name chunks --partition-key-path "/document_id"
+
+az cosmosdb sql container create `
+  --account-name $COSMOS_NAME --resource-group $RG `
+  --database-name $COSMOS_DB `
+  --name templates --partition-key-path "/target_industry"
+```
+
+```bash
+# Mac & Linux
+az cosmosdb sql container create \
+  --account-name $COSMOS_NAME --resource-group $RG \
+  --database-name $COSMOS_DB \
+  --name documents --partition-key-path "/type"
+
+az cosmosdb sql container create \
+  --account-name $COSMOS_NAME --resource-group $RG \
+  --database-name $COSMOS_DB \
+  --name chunks --partition-key-path "/document_id"
+
+az cosmosdb sql container create \
+  --account-name $COSMOS_NAME --resource-group $RG \
+  --database-name $COSMOS_DB \
+  --name templates --partition-key-path "/target_industry"
+```
+
+### 3-4. `chunks` コンテナに Vector Index を設定
+
+#### 3-4-1. ポリシーJSONを書き出す
+
+```powershell
+# Windows
+@'
 {
-  "properties": {
-    "resource": {
-      "id": "cases",
-      "partitionKey": { "paths": ["/industry"], "kind": "Hash" },
-      "vectorEmbeddingPolicy": {
-        "vectorEmbeddings": [{
-          "path": "/embedding",
-          "dataType": "float32",
-          "distanceFunction": "cosine",
-          "dimensions": 1536
-        }]
-      },
-      "indexingPolicy": {
-        "indexingMode": "consistent",
-        "automatic": true,
-        "includedPaths": [{"path": "/*"}],
-        "excludedPaths": [
-          {"path": "/\"_etag\"/?"},
-          {"path": "/embedding/*"}
-        ],
-        "vectorIndexes": [{"path": "/embedding", "type": "diskANN"}]
-      }
-    },
-    "options": { "throughput": 400 }
-  }
+  "vectorEmbeddings": [{
+    "path": "/embedding",
+    "dataType": "float32",
+    "distanceFunction": "cosine",
+    "dimensions": 1536
+  }]
 }
-'@
+'@ | Set-Content -Encoding utf8 vector-policy.json
 
-[System.IO.File]::WriteAllText(
-  "$PWD\cases-container.json",
-  $containerDef,
-  [System.Text.UTF8Encoding]::new($false)  # $false = BOM 無し
-)
+@'
+{
+  "indexingMode": "consistent",
+  "includedPaths": [{"path": "/*"}],
+  "excludedPaths": [{"path": "/embedding/*"}],
+  "vectorIndexes": [{
+    "path": "/embedding",
+    "type": "quantizedFlat"
+  }]
+}
+'@ | Set-Content -Encoding utf8 index-policy.json
 ```
 
-#### 3-4-2. ARM REST で PUT
+```bash
+# Mac & Linux
+cat > vector-policy.json << 'EOF'
+{
+  "vectorEmbeddings": [{
+    "path": "/embedding",
+    "dataType": "float32",
+    "distanceFunction": "cosine",
+    "dimensions": 1536
+  }]
+}
+EOF
 
-```powershell
-$SUB = az account show --query id -o tsv
-$uri = "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG" + `
-       "/providers/Microsoft.DocumentDB/databaseAccounts/$COSMOS_NAME" + `
-       "/sqlDatabases/$COSMOS_DB/containers/cases?api-version=2024-08-15"
-
-az rest --method put --uri $uri --body "@cases-container.json"
+cat > index-policy.json << 'EOF'
+{
+  "indexingMode": "consistent",
+  "includedPaths": [{"path": "/*"}],
+  "excludedPaths": [{"path": "/embedding/*"}],
+  "vectorIndexes": [{
+    "path": "/embedding",
+    "type": "quantizedFlat"
+  }]
+}
+EOF
 ```
 
-#### 3-4-3. ベクター設定の検証
+#### 3-4-2. `chunks` コンテナに適用
 
 ```powershell
-az cosmosdb sql container show `
+# Windows
+az cosmosdb sql container update `
   --account-name $COSMOS_NAME --resource-group $RG `
-  --database-name $COSMOS_DB --name cases `
-  --query "{pk:resource.partitionKey.paths, vectorPath:resource.vectorEmbeddingPolicy.vectorEmbeddings[0].path, vectorDim:resource.vectorEmbeddingPolicy.vectorEmbeddings[0].dimensions, vectorIdx:resource.indexingPolicy.vectorIndexes[0].path}" `
-  -o json
+  --database-name $COSMOS_DB `
+  --name chunks `
+  --vector-embeddings @vector-policy.json `
+  --idx @index-policy.json
 ```
 
-期待出力例:
-
-```json
-{ "pk": ["/industry"], "vectorPath": "/embedding", "vectorDim": 1536, "vectorIdx": "/embedding" }
+```bash
+# Mac & Linux
+az cosmosdb sql container update \
+  --account-name $COSMOS_NAME --resource-group $RG \
+  --database-name $COSMOS_DB \
+  --name chunks \
+  --vector-embeddings @vector-policy.json \
+  --idx @index-policy.json
 ```
-
-> **次元数 1536 にしている理由**：`text-embedding-3-large` のデフォルト出力は 3072 次元ですが、API 呼び出し時に `dimensions=1536` を指定すると 1536 次元に圧縮できます。1536 次元なら DiskANN の上限内で高速・省ストレージです。**コード側で必ず `dimensions=1536` を指定**してください（`src/agent_first_meeting/tools/case_search.py` で対応済み）。
 
 ### 3-5. エンドポイントとキーを取得
 
 ```powershell
+# Windows
 $COSMOS_ENDPOINT = az cosmosdb show `
   --name $COSMOS_NAME --resource-group $RG `
   --query "documentEndpoint" -o tsv
@@ -346,6 +503,20 @@ Write-Host "COSMOS_ENDPOINT=$COSMOS_ENDPOINT"
 Write-Host "COSMOS_KEY=$COSMOS_KEY"
 ```
 
+```bash
+# Mac & Linux
+COSMOS_ENDPOINT=$(az cosmosdb show \
+  --name $COSMOS_NAME --resource-group $RG \
+  --query "documentEndpoint" -o tsv)
+
+COSMOS_KEY=$(az cosmosdb keys list \
+  --name $COSMOS_NAME --resource-group $RG \
+  --query "primaryMasterKey" -o tsv)
+
+echo "COSMOS_ENDPOINT=$COSMOS_ENDPOINT"
+echo "COSMOS_KEY=$COSMOS_KEY"
+```
+
 ---
 
 ## 4. Azure Blob Storage
@@ -353,6 +524,7 @@ Write-Host "COSMOS_KEY=$COSMOS_KEY"
 ### 4-1. ストレージアカウント作成
 
 ```powershell
+# Windows
 az storage account create `
   --name $STORAGE_NAME `
   --resource-group $RG `
@@ -362,18 +534,39 @@ az storage account create `
   --allow-blob-public-access false
 ```
 
+```bash
+# Mac & Linux
+az storage account create \
+  --name $STORAGE_NAME \
+  --resource-group $RG \
+  --location $LOCATION \
+  --sku Standard_LRS \
+  --kind StorageV2 \
+  --allow-blob-public-access false
+```
+
 ### 4-2. コンテナ作成
 
 ```powershell
+# Windows
 az storage container create `
   --account-name $STORAGE_NAME `
   --name $BLOB_CONTAINER `
   --auth-mode login
 ```
 
+```bash
+# Mac & Linux
+az storage container create \
+  --account-name $STORAGE_NAME \
+  --name $BLOB_CONTAINER \
+  --auth-mode login
+```
+
 ### 4-3. ロールを自分に付与（DefaultAzureCredential で書き込めるようにする）
 
 ```powershell
+# Windows
 $ME = az ad signed-in-user show --query id -o tsv
 $STORAGE_ID = az storage account show `
   --name $STORAGE_NAME --resource-group $RG `
@@ -385,11 +578,25 @@ az role assignment create `
   --scope $STORAGE_ID
 ```
 
+```bash
+# Mac & Linux
+ME=$(az ad signed-in-user show --query id -o tsv)
+STORAGE_ID=$(az storage account show \
+  --name $STORAGE_NAME --resource-group $RG \
+  --query id -o tsv)
+
+az role assignment create \
+  --assignee $ME \
+  --role "Storage Blob Data Contributor" \
+  --scope $STORAGE_ID
+```
+
 > 🛑 このロール付与を忘れると、ローカル開発時に Blob 書き込みで 403 エラーになります。
 
 ### 4-4. 接続情報を取得
 
 ```powershell
+# Windows
 $BLOB_URL = az storage account show `
   --name $STORAGE_NAME --resource-group $RG `
   --query "primaryEndpoints.blob" -o tsv
@@ -401,6 +608,21 @@ $BLOB_KEY = az storage account keys list `
 
 Write-Host "BLOB_ACCOUNT_URL=$BLOB_URL"
 Write-Host "BLOB_ACCOUNT_KEY=$BLOB_KEY"
+```
+
+```bash
+# Mac & Linux
+BLOB_URL=$(az storage account show \
+  --name $STORAGE_NAME --resource-group $RG \
+  --query "primaryEndpoints.blob" -o tsv)
+
+# SAS 付きダウンロード URL を発行したい場合はアカウントキーも取得
+BLOB_KEY=$(az storage account keys list \
+  --account-name $STORAGE_NAME --resource-group $RG \
+  --query "[0].value" -o tsv)
+
+echo "BLOB_ACCOUNT_URL=$BLOB_URL"
+echo "BLOB_ACCOUNT_KEY=$BLOB_KEY"
 ```
 
 > 💡 `BLOB_ACCOUNT_KEY` を `.env` に入れると、生成 PowerPoint のダウンロード URL が SAS 付き（24時間有効）になります。空にすると `DefaultAzureCredential` で認証だけ通り、URL は素のものを返します（プライベートコンテナなので URL 直叩きでは開けません）。**ローカル開発では Key を入れる**のが手っ取り早いです。
@@ -456,6 +678,24 @@ APP_LOG_LEVEL=INFO
 )
 ```
 
+```bash
+# Mac & Linux
+cat > agent-first-meeting/.env << EOF
+AZURE_OPENAI_ENDPOINT=$AOAI_ENDPOINT
+AZURE_OPENAI_API_KEY=$AOAI_KEY
+AZURE_OPENAI_CHAT_DEPLOYMENT=$CHAT_DEPLOY
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT=$EMBED_DEPLOY
+AZURE_OPENAI_API_VERSION=2024-12-01-preview
+COSMOS_ENDPOINT=$COSMOS_ENDPOINT
+COSMOS_KEY=$COSMOS_KEY
+COSMOS_DATABASE=$COSMOS_DB
+BLOB_ACCOUNT_URL=$BLOB_URL
+BLOB_CONTAINER=$BLOB_CONTAINER
+BLOB_ACCOUNT_KEY=$BLOB_KEY
+APP_LOG_LEVEL=INFO
+EOF
+```
+
 > ⚠️ `.env` は絶対に Git にコミットしないでください（`.gitignore` で除外済み）。
 
 ### 動作確認用シードデータの投入
@@ -472,6 +712,19 @@ pip install -e ".[dev]"
 python scripts/check_foundry.py        # Foundry 疎通
 python scripts/seed_cases.py           # cases に 1件 投入（vector search 動作確認込み）
 python scripts/seed_customer.py        # customers / meetings に既存顧客 1件 投入
+python scripts/check_vector_search.py  # vector 検索が動くことを確認
+python scripts/check_pptx_blob.py      # Blob への pptx アップロードを確認
+```
+
+```bash
+cd agent-first-meeting
+~/.pyenv/versions/3.11.9/bin/python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip wheel setuptools
+pip install -e ".[dev]"
+
+python scripts/check_foundry.py        # Foundry 疎通
+python scripts/seed_db.py
 python scripts/check_vector_search.py  # vector 検索が動くことを確認
 python scripts/check_pptx_blob.py      # Blob への pptx アップロードを確認
 ```

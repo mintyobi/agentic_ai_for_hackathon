@@ -1,6 +1,6 @@
-"""Cosmos DB cases コンテナで vector search を試す（Step 5 動作確認）.
+"""Cosmos DB chunks コンテナで vector search を試す（動作確認）.
 
-クエリテキストを埋め込み化し、VectorDistance() で類似事例 TOP N を取得する。
+クエリテキストを埋め込み化し、VectorDistance() で類似チャンク TOP N を取得する。
 """
 import sys
 
@@ -40,10 +40,10 @@ def main() -> None:
         credential=settings.cosmos_key,
     )
     database = cosmos_client.get_database_client(settings.cosmos_database)
-    container = database.get_container_client("cases")
+    container = database.get_container_client("chunks")
 
     query = (
-        "SELECT TOP @top c.id, c.title, c.summary, c.industry, "
+        "SELECT TOP @top c.id, c.document_id, c.text, c.page, "
         "VectorDistance(c.embedding, @vec) AS score "
         "FROM c "
         "ORDER BY VectorDistance(c.embedding, @vec)"
@@ -64,8 +64,8 @@ def main() -> None:
     for i, item in enumerate(results, 1):
         print(
             f"  {i}. score={item['score']:.4f} "
-            f"id={item['id']} industry={item['industry']} "
-            f"title={item['title']}"
+            f"id={item['id']} document_id={item['document_id']} "
+            f"page={item['page']} text={item['text'][:50]}..."
         )
 
 

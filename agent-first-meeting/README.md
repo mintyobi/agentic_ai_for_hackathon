@@ -18,53 +18,67 @@
 
 ```mermaid
 flowchart LR
-    User[営業担当者]
+User[営業担当者]
+subgraph Frontend["Streamlit フロント"]
+    UI["frontend/main.py<br/>入力フォーム + SSE 表示"]
+end
 
-    subgraph Frontend["Streamlit フロント"]
-        UI["frontend/main.py<br/>入力フォーム + SSE 表示"]
+subgraph Backend["FastAPI バックエンド (agent-first-meeting)"]
+    API["api.py<br/>POST /api/first-meeting/generate<br/>SSE: thought / tool / tool_result / message / done"]
+    Agent["agent.py<br/>FirstMeetingAgent<br/>(Semantic Kernel ChatCompletionAgent)<br/>FunctionChoiceBehavior.Auto"]
+
+    subgraph Plugins["SK Plugins (kernel_function)"]
+        P1["CustomerHistoryPlugin<br/>get_customer_history"]
+        P2["CaseSearchPlugin<br/>search_similar_cases"]
+        P3["DocumentGenPlugin<br/>generate_pptx"]
+        P4["MeetingRecordPlugin<br/>save_meeting_record"]
+    end
+end
+
+subgraph Azure["Azure (East US 2)"]
+    subgraph Foundry["Azure AI Foundry"]
+        Chat["gpt-4.1<br/>(chat deployment)"]
+        Emb["text-embedding-3-large<br/>dimensions=1536"]
     end
 
-    subgraph Backend["FastAPI バックエンド (agent-first-meeting)"]
-        API["api.py<br/>POST /api/first-meeting/generate<br/>SSE: thought / tool / tool_result / message / done"]
-        Agent["agent.py<br/>FirstMeetingAgent<br/>(Semantic Kernel ChatCompletionAgent)<br/>FunctionChoiceBehavior.Auto"]
-
-        subgraph Plugins["SK Plugins (kernel_function)"]
-            P1["CustomerHistoryPlugin<br/>get_customer_history"]
-            P2["CaseSearchPlugin<br/>search_similar_cases"]
-            P3["DocumentGenPlugin<br/>generate_pptx"]
-            P4["MeetingRecordPlugin<br/>save_meeting_record"]
-        end
+    subgraph Cosmos["Cosmos DB for NoSQL — sales-agent"]
+        C1[("documents<br/>/type")]
+        C2[("chunks<br/>/document_id<br/>+ Vector Index (quantizedFlat)")]
     end
 
-    subgraph Azure["Azure (East US 2)"]
-        subgraph Foundry["Azure AI Foundry"]
-            Chat["gpt-4.1<br/>(chat deployment)"]
-            Emb["text-embedding-3-large<br/>dimensions=1536"]
-        end
+    Blob[("Blob Storage<br/>generated-documents<br/>proposals/*.pptx")]
+end
 
-        subgraph Cosmos["Cosmos DB for NoSQL — sales-agent"]
-            C1[("customers<br/>/companyId")]
-            C2[("meetings<br/>/companyId")]
-            C3[("documents<br/>/companyId")]
-            C4[("cases<br/>/industry<br/>+ Vector Index (DiskANN)")]
-        end
+User --> UI
+UI -- "httpx SSE" --> API
+API --> Agent
+Agent <--> Chat
+Agent --> P1 & P2 & P3 & P4
 
-        Blob[("Blob Storage<br/>generated-documents<br/>proposals/*.pptx")]
-    end
+P2 -- "embed query" --> Emb
+P2 -- "VectorDistance ORDER BY" --> C2
+P3 -- "python-pptx upload + SAS 24h" --> Blob
 
-    User --> UI
-    UI -- "httpx SSE" --> API
-    API --> Agent
-    Agent <--> Chat
-    Agent --> P1 & P2 & P3 & P4
+classDef gray fill:#D3D1C7,stroke:#888780,color:#2C2C2A
+classDef teal fill:#9FE1CB,stroke:#0F6E56,color:#04342C
+classDef purple fill:#CECBF6,stroke:#534AB7,color:#26215C
+classDef blue fill:#B5D4F4,stroke:#185FA5,color:#042C53
+classDef amber fill:#FAC775,stroke:#854F0B,color:#412402
+classDef green fill:#C0DD97,stroke:#3B6D11,color:#173404
 
-    P1 -- "SELECT companyName" --> C1
-    P1 -- "ORDER BY round DESC" --> C2
-    P2 -- "embed query" --> Emb
-    P2 -- "VectorDistance ORDER BY" --> C4
-    P3 -- "python-pptx upload + SAS 24h" --> Blob
-    P4 -- "upsert (new company)" --> C1
-    P4 -- "upsert record (outcomes=null)" --> C2
+class User gray
+class UI teal
+class API,Agent,P1,P2,P3,P4 purple
+class Chat,Emb blue
+class C1,C2 amber
+class Blob green
+
+style Frontend fill:#E1F5EE,stroke:#0F6E56
+style Backend fill:#EEEDFE,stroke:#534AB7
+style Plugins fill:#EEEDFE,stroke:#534AB7
+style Azure fill:#E6F1FB,stroke:#185FA5
+style Foundry fill:#E6F1FB,stroke:#185FA5
+style Cosmos fill:#FAEEDA,stroke:#854F0B
 ```
 
 ## 実行フロー
@@ -82,35 +96,54 @@ sequenceDiagram
     participant Web as 顧客 HP (外部)
 
     Sales->>UI: 会社名/業種/規模/課題感を入力
-    UI->>API: POST /api/first-meeting/generate
-    API->>Agent: invoke_stream(user_message)
+UI->>API: POST /api/first-meeting/generate
+API->>Agent: invoke_stream(user_message)
 
-    Note over Agent: auto function calling<br/>(ツール選択順は LLM が都度判断)
+Note over Agent: auto function calling<br/>(ツール選択順は LLM が都度判断)
 
-    Agent->>Cosmos: get_customer_history(companyName)
-    Cosmos-->>Agent: {customer, meetings[]} or null
+Agent->>Cosmos: get_customer_history(companyName)
+Cosmos-->>Agent: {customer, meetings[]} or null
 
-    opt 顧客 HP URL が入力されている場合
-        Agent->>Web: fetch_url_text(url)<br/>SSRF / リダイレクト各ホップ検証
-        Web-->>Agent: {ok, final_url, text} ≤ 4000 字
-    end
+opt 顧客 HP URL が入力されている場合
+    Agent->>Web: fetch_url_text(url)<br/>SSRF / リダイレクト各ホップ検証
+    Web-->>Agent: {ok, final_url, text} ≤ 4000 字
+end
 
-    Agent->>Emb: embeddings.create(query, dim=1536)
-    Emb-->>Agent: vector[1536]
-    Agent->>Cosmos: search_similar_cases<br/>(VectorDistance TOP 3)
-    Cosmos-->>Agent: cases[] with score
+Agent->>Emb: embeddings.create(query, dim=1536)
+Emb-->>Agent: vector[1536]
+Agent->>Cosmos: search_similar_cases<br/>(chunks: VectorDistance TOP 3)
+Cosmos-->>Agent: chunks[] with score
 
-    Note over Agent: 履歴 + 類似事例から<br/>提案タイトル生成
+Note over Agent: 類似チャンクから documents を参照<br/>提案タイトル生成
 
-    Agent->>Blob: generate_pptx(cover_title, cover_subtitle,<br/>industry_body, position_body)<br/>→ 6 スライド PPTX を Blob にアップロード
-    Blob-->>Agent: SAS 付き URL (24h)
+Agent->>Cosmos: get_document_metadata<br/>(documents: /type)
+Cosmos-->>Agent: documents[] メタ情報
 
-    Agent->>Cosmos: save_meeting_record<br/>(新規なら customers にも upsert)
-    Cosmos-->>Agent: meeting id (mtg_xxx)
+Agent->>Blob: generate_pptx(cover_title, cover_subtitle,<br/>industry_body, position_body)<br/>→ 6 スライド PPTX を Blob にアップロード
+Blob-->>Agent: SAS 付き URL (24h)
 
-    Agent-->>API: streaming (tool / tool_result / message)
-    API-->>UI: SSE events
-    UI-->>Sales: PPTX URL + 提案根拠 + 次回アクション
+Agent->>Cosmos: save_meeting_record<br/>(新規なら customers にも upsert)
+Cosmos-->>Agent: meeting id (mtg_xxx)
+
+Agent-->>API: streaming (tool / tool_result / message)
+API-->>UI: SSE events
+UI-->>Sales: PPTX URL + 提案根拠 + 次回アクション
+
+%%{init: {'theme': 'base', 'themeVariables': {
+    'actorBkg': '#D3D1C7',
+    'actorBorder': '#888780',
+    'actorTextColor': '#2C2C2A',
+    'activationBkgColor': '#EEEDFE',
+    'activationBorderColor': '#534AB7',
+    'noteBkgColor': '#FAEEDA',
+    'noteBorderColor': '#854F0B',
+    'noteTextColor': '#412402',
+    'loopTextColor': '#26215C',
+    'labelBoxBkgColor': '#E1F5EE',
+    'labelBoxBorderColor': '#0F6E56',
+    'labelTextColor': '#04342C',
+    'sequenceNumberColor': '#042C53'
+}}}%%
 ```
 
 ## エージェントの判断ロジック
@@ -128,24 +161,38 @@ flowchart TD
     WF -- "Yes" --> W[fetch_url_text<br/>SSRF ガード経由で本文取得]
     WF -- "No" --> S
     W --> S
-    S[search_similar_cases<br/>業界/規模/課題で自然文検索<br/>TOP 3]
+    S[search_similar_cases<br/>chunksをVectorDistance TOP 3で検索<br/>→ documentsからメタ情報取得]
     S --> T[提案タイトル + 業界本文 + 役職本文<br/>を考案<br/>（既存顧客なら前回 outcomes / nextActions を加味）]
     T --> G[generate_pptx<br/>6 スライド構成<br/>（表紙/目次/業界/役職/商品/費用）]
     G --> R[save_meeting_record<br/>outcomes=null で書き出し<br/>round 自動採番]
     R --> Report["ユーザーへ報告<br/>履歴有無 / URL / タイトル根拠 /<br/>確認ポイント / レコード ID"]
     Report --> End([follow-up エージェントへ引き継ぎ])
+
+classDef gray fill:#D3D1C7,stroke:#888780,color:#2C2C2A
+classDef purple fill:#CECBF6,stroke:#534AB7,color:#26215C
+classDef amber fill:#FAC775,stroke:#854F0B,color:#412402
+classDef green fill:#C0DD97,stroke:#3B6D11,color:#173404
+classDef teal fill:#9FE1CB,stroke:#0F6E56,color:#04342C
+classDef blue fill:#B5D4F4,stroke:#185FA5,color:#042C53
+
+class Start,End gray
+class H,W teal
+class Q,WF purple
+class S,T purple
+class G green
+class R,Report amber
 ```
 
 ## ディレクトリ構成
 
-```
+```tree
 agent-first-meeting/
 ├── pyproject.toml
 ├── README.md
 ├── .env.example
 ├── src/
 │   └── agent_first_meeting/    # Python パッケージ本体
-└── tests/                      # テストコード
+├── tests/                      # テストコード
 └── docs/                       # このエージェントの仕様書
 ```
 
@@ -175,12 +222,34 @@ cp .env.example .env
 エージェントは以下の Semantic Kernel プラグインを `FunctionChoiceBehavior.Auto` で自律的に呼び出します。
 
 | # | ツール名 | プラグイン | 役割 |
-|---|---|---|---|
-| ① | `get_customer_history` | `CustomerHistoryPlugin` | `customers` / `meetings` から過去情報取得 |
-| ② | `search_similar_cases` | `CaseSearchPlugin` | `cases` コンテナを vector 検索（TOP N, DiskANN） |
+|:--|:--|:--|:--|
+| ① | `get_customer_history` | `CustomerHistoryPlugin` | 過去の顧客情報・面談履歴を取得 |
+| ② | `search_similar_cases` | `CaseSearchPlugin` | `chunks` をベクトル検索（TOP N, quantizedFlat）→ `documents` からメタ情報取得|
 | ③ | `fetch_url_text` | `WebFetchPlugin` | 顧客 HP の URL を取得し本文テキスト化（最大4000字） |
 | ④ | `generate_pptx` | `DocumentGenPlugin` | 6 スライド PPTX 生成 → Blob アップロード（SAS 24h） |
-| ⑤ | `save_meeting_record` | `MeetingRecordPlugin` | `meetings` に upsert（follow-up エージェントへの引き継ぎ） |
+| ⑤ | `save_meeting_record` | `MeetingRecordPlugin` | 面談記録を保存（follow-up エージェントへの引き継ぎ） |
+
+### 各ツールの解析
+
+1. `get_customer_history`
+    - 過去に面談したことがある顧客かどうかを確認する。
+    - 既存顧客であれば前回の提案内容や結果を取得し、今回の提案に活かす。
+2. `search_similar_cases`
+   - 顧客の業種・規模・課題を元に類似事例を検索する。
+   - `chunks` コンテナでベクトル検索を行い、ヒットしたチャンクの元資料情報を `documents` コンテナから取得する。
+    > 図書館で「この本に似た本を探して」と頼むと、まず本文の内容で類似本を見つけ（`chunks` 検索）、
+    > 次にその本のタイトルや著者を確認する（`documents` 参照）イメージです。
+3. `fetch_url_text`
+   - 顧客のHPを取得してテキスト化する。
+   - 事前に顧客のことを調べた上で提案できるため、より的確な資料を作成できる。
+   - HP の URL が未入力の場合はスキップされる。
+4. `generate_pptx`
+   - 収集した情報を元に提案資料（PPTX）を自動生成する。
+   - Blob Storage にアップロードする。
+   - 発行された URL は24時間有効。
+5. `save_meeting_record`
+    - 生成した提案内容を面談記録として保存。
+    - follow-up エージェントが次回以降の対応を引き継げる用ににするための記録。
 
 ## テスト
 
