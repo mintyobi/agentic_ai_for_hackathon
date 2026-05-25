@@ -92,6 +92,34 @@ def test_to_user_message_first_meeting_label():
     assert "2回目以降" not in msg
 
 
+def test_last_meeting_notes_alias_and_default():
+    """lastMeetingNotes は camelCase で受けられ、未指定なら空文字になること."""
+    req = GenerateRequest(**_minimum_payload())
+    assert req.last_meeting_notes == ""
+    req2 = GenerateRequest(
+        **_minimum_payload(meetingStatus="followup", lastMeetingNotes="前向きな反応")
+    )
+    assert req2.last_meeting_notes == "前向きな反応"
+
+
+def test_to_user_message_followup_includes_last_meeting_notes():
+    """followup のときは前回面談メモがプロンプトに含まれること."""
+    req = GenerateRequest(
+        **_minimum_payload(meetingStatus="followup", lastMeetingNotes="RAG 事例を依頼された")
+    )
+    msg = to_user_message(req)
+    assert "前回面談メモ" in msg
+    assert "RAG 事例を依頼された" in msg
+
+
+def test_to_user_message_first_meeting_omits_last_meeting_notes():
+    """初回のときは「前回面談メモ」行を出さないこと（前回が存在しないため）."""
+    req = GenerateRequest(**_minimum_payload(lastMeetingNotes="無視されるはず"))
+    msg = to_user_message(req)
+    assert "前回面談メモ" not in msg
+    assert "無視されるはず" not in msg
+
+
 def test_to_user_message_marks_missing_optional_fields():
     """任意項目が空のとき「（未記入）」が出ること."""
     req = GenerateRequest(**_minimum_payload())

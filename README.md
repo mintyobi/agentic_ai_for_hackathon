@@ -67,35 +67,29 @@ flowchart TD
 graph TD
     ROOT["📁 agentic_ai_for_hackathon/　ルートリポジトリ"]
  
-    ROOT --> A["📁 agent-first-meeting/　初回面談エージェント"]
-    ROOT --> B["📁 agent-follow-up/　フォローアップエージェント"]
-    ROOT --> F["📁 frontend/　Ex.) Streamlit UI"]
+    ROOT --> A["📁 agent-first-meeting/　面談支援エージェント本体<br>（first / followup 両モード）"]
+    ROOT --> F["📁 frontend/　Streamlit UI"]
     ROOT --> D["📁 docs/　プロジェクト全体のドキュメント"]
-    ROOT --> DC["🐳 docker-compose.yml"]
-    ROOT --> ENV["📄 .env.example"]
  
     A --> A1["📁 src/　ソースコード本体"]
     A --> A2["📁 docs/　このエージェントの仕様書"]
     A --> A3["📁 tests/　テストコード"]
     A --> A4["📄 pyproject.toml"]
  
-    B --> B1["📁 src/　ソースコード本体"]
-    B --> B2["📁 docs/　このエージェントの仕様書"]
-    B --> B3["📁 tests/　テストコード"]
-    B --> B4["📄 pyproject.toml"]
- 
-    F --> F1["📁 src/pages/　各画面"]
     F --> F2["📄 main.py"]
+    F --> F4["📄 pyproject.toml"]
 ```
 
 ### 各ディレクトリの役割
  
 | ディレクトリ | 担当者 | 役割 |
 |---|---|---|
-| `agent-first-meeting/` | ともや | 初回面談向け：類似事例検索・アポ資料生成 |
-| `agent-follow-up/` | 未定 | 2回目以降：顧客情報参照・提案資料生成 |
+| `agent-first-meeting/` | ともや | 面談支援エージェント本体。**初回（first）と 2回目以降（followup）の両モードに対応**し、`meetingStatus` で切り替える（類似事例検索・資料生成・面談履歴の参照／記録） |
 | `frontend/` | 未定 | Streamlit による営業担当者向けUI |
 | `docs/` | 共同 | システム全体のドキュメント |
+
+> 当初は 2回目以降を別ディレクトリ `agent-follow-up/` に分ける構想だったが、利用ツールが
+> ほぼ共通のため、`agent-first-meeting/` 内に followup モードとして統合した。
 
 ### `src/` と `docs/` の使い分け
  
@@ -115,27 +109,27 @@ graph TD
  
 ## 開発フロー
  
-2人が**並行して**それぞれのエージェントを開発し、最終的にルートリポジトリへ統合します。
- 
+エージェント本体（first → followup の順でモードを拡充）と UI を**並行して**開発し、
+`develop` へ集約して `main` にリリースします。
+
 ```mermaid
 flowchart LR
     subgraph Phase1["Phase 1　並行開発"]
-        A["agent-first-meeting/ 開発"]
-        B["agent-follow-up/ 開発"]
+        A["agent-first-meeting/<br>first → followup モード拡充"]
+        B["frontend/<br>Streamlit UI"]
     end
  
     subgraph Phase2["Phase 2　インターフェース合わせ"]
-        C["APIの入出力形式を確認・調整"]
+        C["API の入出力形式を確認・調整<br>（meetingStatus / SSE）"]
     end
  
-    subgraph Phase3["Phase 3　統合"]
-        D["sales-agent/ <br>にコードをマージ"]
+    subgraph Phase3["Phase 3　統合・リリース"]
         E["結合テスト"]
-        F["リリース🚀"]
+        F["develop → main リリース🚀"]
     end
  
     Phase1 --> Phase2 --> Phase3
-    D --> E --> F
+    E --> F
 ```
 
 ## 統合をスムーズにするための事前合意事項
@@ -174,22 +168,22 @@ gitGraph
     checkout develop
     commit id: "setup"
  
-    branch feature/first-meeting-agent
-    checkout feature/first-meeting-agent
-    commit id: "case_searcher 実装"
-    commit id: "document_generator 実装"
+    branch feature/init-agent-first-meeting
+    checkout feature/init-agent-first-meeting
+    commit id: "case_search 実装"
+    commit id: "document_gen / 面談保存 実装"
     checkout develop
-    merge feature/first-meeting-agent id: "Merge A"
+    merge feature/init-agent-first-meeting id: "Merge first"
  
-    branch feature/follow-up-agent
-    checkout feature/follow-up-agent
-    commit id: "info_retriever 実装"
-    commit id: "proposal_generator 実装"
+    branch feature/followup-agent
+    checkout feature/followup-agent
+    commit id: "outcomes 記録ツール"
+    commit id: "継続提案プロンプト本実装"
     checkout develop
-    merge feature/follow-up-agent id: "Merge B"
+    merge feature/followup-agent id: "Merge followup"
  
     checkout main
-    merge develop id: "v1.0.0 リリース"
+    merge develop id: "リリース"
 ```
 
 ### ブランチ命名規則
@@ -289,10 +283,8 @@ Phase 3（統合時）の具体的な作業手順です。
  
 ```mermaid
 flowchart TD
-    S1["各エージェントの<br>最終コードを確認"] --> S2["agent-first-meeting/src/<br>をルートにコピー"]
-    S2 --> S3["agent-follow-up/src/<br>をルートにコピー"]
-    S3 --> S4["docker-compose.yml を更新"]
-    S4 --> S5["結合テストを実行<br>tests/integration/"]
+    S1["agent-first-meeting の<br>最終コードを確認<br>（first / followup 両モード）"] --> S2["frontend と結線<br>（meetingStatus / SSE）"]
+    S2 --> S5["結合テストを実行"]
     S5 --> S6{テスト通過？}
     S6 -->|✅ YES| S7["develop へマージ<br>→ main へリリース"]
     S6 -->|❌ NO| S8["問題箇所を修正<br>→ S5 に戻る"]
@@ -308,8 +300,7 @@ flowchart TD
 | プロジェクト概要 | `docs/overview.md` | システム全体の目的・構成 |
 | API仕様（全体） | `docs/api.md` | 全エンドポイントの一覧 |
 | 環境構築手順 | `docs/setup.md` | 詳細なセットアップ手順 |
-| 初回エージェント仕様 | `agent-first-meeting/docs/api.md` | エンドポイント・入出力定義 |
-| フォローアップ仕様 | `agent-follow-up/docs/api.md` | エンドポイント・入出力定義 |
+| 面談エージェント仕様（first / followup） | `agent-first-meeting/docs/api.md` | エンドポイント・入出力定義（両モード） |
 
 ### `docs/api.md` の書き方テンプレート（仮）
  

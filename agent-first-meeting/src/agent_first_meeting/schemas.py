@@ -46,6 +46,17 @@ class GenerateRequest(BaseModel):
         description="面談ステータス。'first' = 初回、'followup' = 2回目以降。",
     )
 
+    # follow-up 用：前回面談で実際に何が起きたか（outcomes 記録の入力）
+    last_meeting_notes: str = Field(
+        default="",
+        alias="lastMeetingNotes",
+        description=(
+            "（followup 時）前回面談の実績・反応・所感のメモ。"
+            "記入されていれば record_meeting_outcomes で前回 meeting の outcomes として保存され、"
+            "今回の継続提案の根拠になる。"
+        ),
+    )
+
 
 def to_user_message(req: GenerateRequest) -> str:
     """ユーザー向けプロンプト形式に整形する."""
@@ -56,7 +67,7 @@ def to_user_message(req: GenerateRequest) -> str:
         if position_category
         else "不明（役職表記から判定できなかったので、あなたが判断してください）"
     )
-    return (
+    message = (
         f"以下の顧客の{status_label}に向けたアポ資料を作ってください。\n\n"
         f"- 会社名：{req.company_name}\n"
         f"- 業種：{req.industry}\n"
@@ -70,3 +81,7 @@ def to_user_message(req: GenerateRequest) -> str:
         f"- 担当営業：{req.salesperson or '（未記入）'}\n"
         f"- 面談ステータス：{status_label}\n"
     )
+    # follow-up のときだけ「前回面談メモ」を渡す（初回には存在しない情報なので出さない）
+    if req.meeting_status == "followup":
+        message += f"- 前回面談メモ：{req.last_meeting_notes or '（未記入）'}\n"
+    return message
