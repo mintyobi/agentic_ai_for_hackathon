@@ -51,11 +51,20 @@ class CaseSearchPlugin:
         top: Annotated[int, "取得件数。既定は 3。"] = 3,
     ) -> Annotated[str, "類似資料チャンクの JSON 配列文字列。"]:
         # ① 業種指定があれば documents から対象 doc を絞る
+        #    UI の業種値（例「IT・ソフトウェア」）と取り込み時の値（例「IT」）が
+        #    完全一致しないため、双方向 CONTAINS で吸収する。加えて全業種カタログは
+        #    どの業種でも参考になるので常に対象へ含める。一致が無ければ doc_ids=None
+        #    として全件検索にフォールバックする（後段の else 分岐）。
         doc_ids: list[str] | None = None
         if industry:
             docs = list(
                 self._documents.query_items(
-                    query="SELECT c.id FROM c WHERE c.industry = @industry",
+                    query=(
+                        "SELECT c.id FROM c WHERE "
+                        "CONTAINS(@industry, c.industry) "
+                        "OR CONTAINS(c.industry, @industry) "
+                        "OR c.industry = '全業種'"
+                    ),
                     parameters=[{"name": "@industry", "value": industry}],
                     enable_cross_partition_query=True,
                 )

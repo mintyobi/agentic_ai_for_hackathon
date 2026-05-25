@@ -56,15 +56,16 @@ def is_safe_public_url(url: str) -> tuple[bool, str]:
             ip = ipaddress.ip_address(addr)
         except ValueError:
             return False, f"invalid ip from dns: {addr}"
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_multicast
-            or ip.is_reserved
-            or ip.is_unspecified
-        ):
-            return False, f"blocked internal ip {addr} for host {hostname}"
+        # IPv4-mapped IPv6（例: ::ffff:169.254.169.254）は素の IPv4 として判定する。
+        # これをしないと IMDS や内部 IP を IPv6 表記で迂回されうる。
+        mapped = getattr(ip, "ipv4_mapped", None)
+        if mapped is not None:
+            ip = mapped
+        # is_global=False を一括で弾く。private / loopback / link-local /
+        # multicast / reserved / unspecified に加え、CGNAT 100.64.0.0/10 など
+        # 「公開ルーティング対象でない」アドレスも網羅的にブロックできる。
+        if not ip.is_global:
+            return False, f"blocked non-global (internal) ip {addr} for host {hostname}"
 
     if not seen_addrs:
         return False, f"no addresses resolved for {hostname}"

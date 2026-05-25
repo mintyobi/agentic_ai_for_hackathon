@@ -116,7 +116,12 @@ FOLLOWUP_AGENT_INSTRUCTIONS = """\
      nextActions / preMeetingDocumentUrl を読み取る
 
 2. 入力に「前回面談メモ」がある場合は、**record_meeting_outcomes** で
-   直近 meeting の outcomes として保存する（round_num は省略＝最新が対象）
+   step1 で読み取った直近 meeting の round を **round_num に必ず明示指定して**
+   outcomes を保存する。この記録は **step5/6 の資料生成・保存より先に** 行うこと
+   - round_num を省略すると「最新の meeting」が対象になるが、step6 で今回の
+     新規レコード（outcomes=null）を先に作ってしまうと、そちらに前回メモが
+     書き込まれて前回実績が永久に確定しなくなる。これを防ぐため round_num は
+     前回 round の値を必ず渡す
    - これにより「前回の成果」が確定し、今回の提案の根拠になる
    - メモが「（未記入）」または空なら呼ばない。その場合は履歴に既にある
      outcomes をそのまま根拠に使う（outcomes も nextActions も無ければ、

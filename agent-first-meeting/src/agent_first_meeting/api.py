@@ -170,10 +170,19 @@ async def generate(req: GenerateRequest) -> EventSourceResponse:
                 warnings.append(msg)
                 logger.warning(msg)
 
+            # 資料は出たが必須ツールが欠けている場合は "partial"（警告付き完了）。
+            # フロントは partial を「生成完了（警告あり）」として表示する。
+            if not document_url:
+                status = "error"
+            elif missing:
+                status = "partial"
+            else:
+                status = "success"
+
             yield _sse(
                 "done",
                 {
-                    "status": "success" if document_url else "error",
+                    "status": status,
                     "data": {
                         "documentUrl": document_url,
                         "message": accumulated_text,

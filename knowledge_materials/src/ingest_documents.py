@@ -57,12 +57,13 @@ SAMPLE_FILES = [
 
 
 # ----------------------------------------
-# ① PPTX からテキストを抽出（スライドごと）
+# ① PPTX からスライドごとに (実スライド番号, 本文) を抽出
+#    スライド境界を保持し、後段で chunk に実スライド番号を付与できるようにする。
 # ----------------------------------------
-def extract_text_from_pptx(file_path: Path) -> str:
+def extract_slides_from_pptx(file_path: Path) -> list[tuple[int, str]]:
     prs = Presentation(str(file_path))
-    slide_texts: list[str] = []
-    for i, slide in enumerate(prs.slides):
+    slides: list[tuple[int, str]] = []
+    for i, slide in enumerate(prs.slides, start=1):
         parts = []
         for shape in slide.shapes:
             if not shape.has_text_frame:
@@ -72,8 +73,8 @@ def extract_text_from_pptx(file_path: Path) -> str:
                 if line:
                     parts.append(line)
         if parts:
-            slide_texts.append(f"[スライド{i + 1}]\n" + "\n".join(parts))
-    return "\n\n".join(slide_texts)
+            slides.append((i, "\n".join(parts)))
+    return slides
 
 
 # ----------------------------------------
@@ -143,20 +144,23 @@ def ingest_document(openai_client, documents, chunks, spec: dict) -> int:
     )
     print(f"  ✓ documents に登録: {doc_id}")
 
-    pieces = split_into_chunks(extract_text_from_pptx(_DATA_DIR / spec["path"]))
-    for i, chunk_text in enumerate(pieces):
-        chunks.upsert_item(
-            {
-                "id": str(uuid.uuid4()),
-                "document_id": doc_id,     # パーティションキー
-                "text": chunk_text,
-                "embedding": get_embedding(openai_client, chunk_text),
-                "slide_number": i,
-                "section": f"chunk_{i}",
-            }
-        )
-    print(f"  ✓ chunks に登録完了（{len(pieces)} 件）\n")
-    return len(pieces)
+    slides = extract_slides_from_pptx(_DATA_DIR / spec["path"])
+    chunk_count = 0
+    for slide_number, slide_text in slides:
+        for chunk_text in split_into_chunks(slide_text):
+            chunks.upsert_item(
+                {
+                    "id": str(uuid.uuid4()),
+                    "document_id": doc_id,         # パーティションキー
+                    "text": chunk_text,
+                    "embedding": get_embedding(openai_client, chunk_text),
+                    "slide_number": slide_number,  # 実スライド番号
+                    "section": f"slide_{slide_number}",
+                }
+            )
+            chunk_count += 1
+    print(f"  ✓ chunks に登録完了（{chunk_count} 件）\n")
+    return chunk_count
 
 
 def main() -> None:
