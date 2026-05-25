@@ -1,0 +1,22 @@
+[project]
+name = "frontend"
+version = "0.1.0"
+description = "営業支援エージェント Streamlit フロントエンド"
+requires-python = ">=3.11"
+
+dependencies = [
+    "streamlit",
+    "httpx",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
