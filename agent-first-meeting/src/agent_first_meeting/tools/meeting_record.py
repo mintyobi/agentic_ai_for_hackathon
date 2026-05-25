@@ -18,11 +18,13 @@ from azure.cosmos.exceptions import (
 from semantic_kernel.functions import kernel_function
 
 from agent_first_meeting._company_id import deterministic_company_id
+from agent_first_meeting._meeting_select import select_target_meeting
 from agent_first_meeting.config import settings
 
 logger = logging.getLogger(__name__)
 
 _MAX_ROUND_RETRY = 50
+_INTERNAL_FIELDS = {"_rid", "_self", "_etag", "_attachments", "_ts"}
 
 
 def _meeting_doc_id(company_id: str, round_num: int) -> str:
@@ -141,3 +143,59 @@ class MeetingRecordPlugin:
             f"failed to allocate meeting round number for {company_id} "
             f"after {_MAX_ROUND_RETRY} attempts"
         )
+
+    @kernel_function(
+        description=(
+            "実施済みの面談で得られた結果・所感（outcomes）を meetings コンテナに記録する。"
+            "save_meeting_record が outcomes=null で作ったレコードを後から埋めるためのツールで、"
+            "follow-up エージェントが『前回の outcomes を踏まえる』ための前提データになる。"
+            "round_num を省略（0）すると最新の面談を対象にする。"
+            "対象面談を done にし、更新した meetings ドキュメントの ID を返す。"
+        ),
+    )
+    def record_meeting_outcomes(
+        self,
+        company_name: Annotated[str, "顧客企業の正式名称"],
+        outcomes: Annotated[
+            str,
+            "実施した面談で判明した結果・反応・所感の要約（自由文）",
+        ],
+        round_num: Annotated[
+            int,
+            "対象の面談 round。0 以下なら最新の面談を対象にする。",
+        ] = 0,
+    ) -> Annotated[str, "outcomes を記録した meetings ドキュメントの ID"]:
+        company_id = deterministic_company_id(company_name)
+        meetings = list(
+            self._meetings.query_items(
+                query=(
+                    "SELECT * FROM c WHERE c.companyId = @id ORDER BY c.round DESC"
+                ),
+                parameters=[{"name": "@id", "value": company_id}],
+                partition_key=company_id,
+            )
+        )
+        target = select_target_meeting(meetings, round_num)
+        if target is None:
+            # 対象が無いのは「初回でまだ面談が無い」「指定 round が誤り」のいずれか。
+            # ここで例外を投げると API が実行全体を error にしてしまうため、
+            # エージェントが読んで判断できるメッセージを返すに留める（記録はスキップ）。
+            msg = (
+                f"記録対象の面談が見つかりませんでした "
+                f"(company={company_name}, round={round_num or 'latest'})。"
+                "outcomes の記録はスキップしました。"
+            )
+            logger.info("MeetingRecordPlugin: %s", msg)
+            return msg
+
+        body = {k: v for k, v in target.items() if k not in _INTERNAL_FIELDS}
+        body["outcomes"] = outcomes
+        body["status"] = "done"
+        body["updatedAt"] = datetime.now(timezone.utc).isoformat()
+        self._meetings.upsert_item(body)
+
+        logger.info(
+            "MeetingRecordPlugin: recorded outcomes id=%s company_id=%s round=%s",
+            body["id"], company_id, body.get("round"),
+        )
+        return body["id"]
