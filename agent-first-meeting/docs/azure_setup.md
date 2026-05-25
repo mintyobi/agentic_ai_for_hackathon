@@ -710,7 +710,7 @@ pip install --upgrade pip wheel setuptools
 pip install -e ".[dev]"
 
 python scripts/check_foundry.py        # Foundry 疎通
-python scripts/seed_cases.py           # cases に 1件 投入（vector search 動作確認込み）
+python scripts/ingest_documents.py     # data/ の PPTX を documents/chunks へ取り込み（chunks も自動作成）
 python scripts/seed_customer.py        # customers / meetings に既存顧客 1件 投入
 python scripts/check_vector_search.py  # vector 検索が動くことを確認
 python scripts/check_pptx_blob.py      # Blob への pptx アップロードを確認
@@ -724,10 +724,14 @@ pip install --upgrade pip wheel setuptools
 pip install -e ".[dev]"
 
 python scripts/check_foundry.py        # Foundry 疎通
-python scripts/seed_db.py
+python scripts/ingest_documents.py     # data/ の PPTX を documents/chunks へ取り込み
 python scripts/check_vector_search.py  # vector 検索が動くことを確認
 python scripts/check_pptx_blob.py      # Blob への pptx アップロードを確認
 ```
+
+> 💡 `scripts/ingest_documents.py` は `chunks` コンテナをベクトルポリシー付きで自動作成する
+> （Python SDK の `create_container_if_not_exists(..., vector_embedding_policy=...)` を使用）。
+> §3-4 の `az rest` による手動作成を行わなくても、このスクリプトだけで `documents`/`chunks` が揃う。
 
 ---
 

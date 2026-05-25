@@ -237,7 +237,7 @@ pip install -e ".[dev]"
 
 # 4. Azure リソースへのスモークテスト＆シードデータ投入
 python scripts/check_foundry.py        # Foundry 疎通
-python scripts/seed_cases.py           # cases コンテナへ投入
+python scripts/ingest_documents.py     # data/ の PPTX を documents/chunks へ取り込み（chunks も自動作成）
 python scripts/seed_customer.py        # customers / meetings へ投入
 python scripts/check_vector_search.py  # vector 検索の動作確認
 python scripts/check_pptx_blob.py      # Blob アップロードの動作確認

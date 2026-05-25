@@ -1,4 +1,9 @@
-"""類似事例検索プラグイン (Cosmos DB Vector Search)."""
+"""類似事例検索プラグイン (Cosmos DB Vector Search - ナレッジベース版).
+
+過去の営業資料（提案書・カタログ）を PPTX から取り込んだ `documents`（メタ情報）/
+`chunks`（本文チャンク＋埋め込み）コンテナに対してベクトル検索する。
+取り込みは scripts/ingest_documents.py を参照。
+"""
 import json
 from typing import Annotated
 
@@ -10,7 +15,7 @@ from agent_first_meeting.config import settings
 
 
 class CaseSearchPlugin:
-    """`cases` コンテナを vector 検索する SK プラグイン."""
+    """`documents` / `chunks` コンテナをハイブリッド検索する SK プラグイン."""
 
     def __init__(self) -> None:
         self._openai = AzureOpenAI(
@@ -18,20 +23,19 @@ class CaseSearchPlugin:
             azure_endpoint=settings.azure_openai_endpoint,
             api_version=settings.azure_openai_api_version,
         )
-        cosmos = CosmosClient(
+        db = CosmosClient(
             settings.cosmos_endpoint,
             credential=settings.cosmos_key,
-        )
-        self._container = (
-            cosmos.get_database_client(settings.cosmos_database)
-            .get_container_client("cases")
-        )
+        ).get_database_client(settings.cosmos_database)
+        self._documents = db.get_container_client("documents")
+        self._chunks = db.get_container_client("chunks")
 
     @kernel_function(
         description=(
-            "社内に蓄積された過去の事例を類似度検索する。"
+            "社内に蓄積された過去の営業資料（提案書・製品カタログ）を類似度検索する。"
             "顧客の業界・規模・課題感などを自由記述のクエリで渡すと、"
-            "意味的に近い事例の id, title, summary, industry, solutions, outcomes, score を返す。"
+            "意味的に近い資料チャンクのテキストと出典情報を返す。"
+            "industry（業種）を指定すると、その業種の資料に絞り込んでから検索する。"
         ),
     )
     def search_similar_cases(
@@ -40,8 +44,25 @@ class CaseSearchPlugin:
             str,
             "検索クエリ。顧客の業界・規模・抱える課題などを自然言語で自由記述。",
         ],
+        industry: Annotated[
+            str,
+            "絞り込む業種（例: 製造業, IT, 金融）。指定しない場合は全業種が対象。",
+        ] = "",
         top: Annotated[int, "取得件数。既定は 3。"] = 3,
-    ) -> Annotated[str, "類似事例の JSON 配列文字列。"]:
+    ) -> Annotated[str, "類似資料チャンクの JSON 配列文字列。"]:
+        # ① 業種指定があれば documents から対象 doc を絞る
+        doc_ids: list[str] | None = None
+        if industry:
+            docs = list(
+                self._documents.query_items(
+                    query="SELECT c.id FROM c WHERE c.industry = @industry",
+                    parameters=[{"name": "@industry", "value": industry}],
+                    enable_cross_partition_query=True,
+                )
+            )
+            doc_ids = [d["id"] for d in docs] if docs else None
+
+        # ② クエリを埋め込み化（アプリ全体で 1536 次元に統一）
         embedding = (
             self._openai.embeddings.create(
                 model=settings.azure_openai_embedding_deployment,
@@ -52,20 +73,31 @@ class CaseSearchPlugin:
             .embedding
         )
 
-        sql = (
-            "SELECT TOP @top c.id, c.title, c.summary, c.industry, "
-            "c.solutions, c.outcomes, "
-            "VectorDistance(c.embedding, @vec) AS score "
-            "FROM c "
-            "ORDER BY VectorDistance(c.embedding, @vec)"
+        # ③ chunks をベクトル検索（業種絞り込みあり/なしで分岐）
+        select = (
+            "SELECT TOP @top c.document_id, c.text, c.slide_number, "
+            "VectorDistance(c.embedding, @vec) AS score FROM c "
         )
+        parameters: list[dict] = [
+            {"name": "@top", "value": top},
+            {"name": "@vec", "value": embedding},
+        ]
+        if doc_ids:
+            placeholders = ", ".join(f"@id{i}" for i in range(len(doc_ids)))
+            parameters += [
+                {"name": f"@id{i}", "value": v} for i, v in enumerate(doc_ids)
+            ]
+            sql = (
+                f"{select}WHERE c.document_id IN ({placeholders}) "
+                "ORDER BY VectorDistance(c.embedding, @vec)"
+            )
+        else:
+            sql = f"{select}ORDER BY VectorDistance(c.embedding, @vec)"
+
         results = list(
-            self._container.query_items(
+            self._chunks.query_items(
                 query=sql,
-                parameters=[
-                    {"name": "@top", "value": top},
-                    {"name": "@vec", "value": embedding},
-                ],
+                parameters=parameters,
                 enable_cross_partition_query=True,
             )
         )
