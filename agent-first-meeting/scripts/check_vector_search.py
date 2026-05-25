@@ -43,7 +43,7 @@ def main() -> None:
     container = database.get_container_client("chunks")
 
     query = (
-        "SELECT TOP @top c.id, c.document_id, c.text, c.page, "
+        "SELECT TOP @top c.id, c.document_id, c.text, c.slide_number, "
         "VectorDistance(c.embedding, @vec) AS score "
         "FROM c "
         "ORDER BY VectorDistance(c.embedding, @vec)"
@@ -65,7 +65,7 @@ def main() -> None:
         print(
             f"  {i}. score={item['score']:.4f} "
             f"id={item['id']} document_id={item['document_id']} "
-            f"page={item['page']} text={item['text'][:50]}..."
+            f"slide={item.get('slide_number')} text={item['text'][:50]}..."
         )
 
 
