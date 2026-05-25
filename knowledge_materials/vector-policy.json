@@ -1,0 +1,10 @@
+{
+    "vectorEmbeddings": [
+        {
+            "path": "/embedding",
+            "dataType": "float32",
+            "distanceFunction": "cosine",
+            "dimensions": 1536
+        }
+    ]
+}
