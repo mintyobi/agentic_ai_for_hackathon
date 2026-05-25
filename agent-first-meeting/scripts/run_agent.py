@@ -39,7 +39,8 @@ async def main() -> None:
         print(f"unknown scenario: {scenario}. choose from {list(SCENARIOS)}")
         sys.exit(1)
 
-    agent = build_agent()
+    # build_agent() は (agent, tracker) のタプルを返す。tracker はここでは未使用。
+    agent, _ = build_agent()
     user_input = SCENARIOS[scenario]
 
     print(f"[scenario] {scenario}")

@@ -79,6 +79,16 @@ with st.form("input_form"):
         height=120,
     )
 
+    last_meeting_notes = st.text_area(
+        "前回面談メモ（「2回目以降」の場合）",
+        placeholder=(
+            "前回面談で実際に起きたこと（相手の反応・合意事項・宿題など）。"
+            "記入すると前回実績として記録され、今回の継続提案の根拠になります。"
+            "初回の場合は空欄で構いません。"
+        ),
+        height=120,
+    )
+
     submitted = st.form_submit_button("🚀 資料を生成", type="primary")
 
 
@@ -98,6 +108,7 @@ if submitted:
         "contactDepartment": contact_department,
         "contactPosition": contact_position,
         "meetingStatus": "first" if meeting_status_label == "初回" else "followup",
+        "lastMeetingNotes": last_meeting_notes,
     }
 
     st.divider()

@@ -710,7 +710,7 @@ pip install --upgrade pip wheel setuptools
 pip install -e ".[dev]"
 
 python scripts/check_foundry.py        # Foundry 疎通
-python scripts/seed_cases.py           # cases に 1件 投入（vector search 動作確認込み）
+python ../knowledge_materials/src/ingest_documents.py  # 営業資料 PPTX を documents/chunks へ取り込み（chunks も自動作成）
 python scripts/seed_customer.py        # customers / meetings に既存顧客 1件 投入
 python scripts/check_vector_search.py  # vector 検索が動くことを確認
 python scripts/check_pptx_blob.py      # Blob への pptx アップロードを確認
@@ -724,10 +724,16 @@ pip install --upgrade pip wheel setuptools
 pip install -e ".[dev]"
 
 python scripts/check_foundry.py        # Foundry 疎通
-python scripts/seed_db.py
+python ../knowledge_materials/src/ingest_documents.py  # 営業資料 PPTX を documents/chunks へ取り込み
 python scripts/check_vector_search.py  # vector 検索が動くことを確認
 python scripts/check_pptx_blob.py      # Blob への pptx アップロードを確認
 ```
+
+> 💡 ナレッジベース（`documents`/`chunks`）の構築は **`knowledge_materials/src/ingest_documents.py`** が担う。
+> agent-first-meeting の venv（`agent_first_meeting` がインストール済み・`.env` あり）から、
+> agent-first-meeting ディレクトリを cwd にして実行する。`chunks` はベクトルポリシー付きで
+> 自動作成される（Python SDK の `create_container_if_not_exists(..., vector_embedding_policy=...)`）ため、
+> §3-4 の `az rest` による手動作成は不要。
 
 ---
 
