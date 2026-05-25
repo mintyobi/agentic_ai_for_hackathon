@@ -2,40 +2,37 @@
 # Library
 # ===
 
-# Standard
-import os
-from pathlib import Path
-from dotenv import load_dotenv
-
 # 3rd party
 from azure.cosmos import CosmosClient
 from openai import AzureOpenAI
 
-load_dotenv(Path(__file__).parent.parent / ".env")
+# アプリと接続情報を統一（sales-agent DB / 1536 次元）
+from agent_first_meeting.config import settings
 
 # クライアント初期化
 cosmos = CosmosClient(
-    url=os.getenv("COSMOS_ENDPOINT"),
-    credential=os.getenv("COSMOS_KEY")
+    settings.cosmos_endpoint,
+    credential=settings.cosmos_key,
 )
 openai_client = AzureOpenAI(
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-    api_version="2024-02-01"
+    azure_endpoint=settings.azure_openai_endpoint,
+    api_key=settings.azure_openai_api_key,
+    api_version=settings.azure_openai_api_version,
 )
 
-db = cosmos.get_database_client("sales-knowledge-db")
+db = cosmos.get_database_client(settings.cosmos_database)
 documents_container = db.get_container_client("documents")
 chunks_container    = db.get_container_client("chunks")
 
 
 # ----------------------------------------
-# 共通：クエリテキストをベクトル化
+# 共通：クエリテキストをベクトル化（アプリと同じ 1536 次元）
 # ----------------------------------------
 def get_query_embedding(text: str) -> list[float]:
     response = openai_client.embeddings.create(
-        model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
-        input=text
+        model=settings.azure_openai_embedding_deployment,
+        input=text,
+        dimensions=1536,
     )
     return response.data[0].embedding
 
