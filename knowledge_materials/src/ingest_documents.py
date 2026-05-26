@@ -8,7 +8,12 @@
 DB は settings.cosmos_database = sales-agent、1536 次元）。chunks は VectorDistance
 検索にベクトルポリシーが必須なので、vector-policy.json / index-policy.json を使って
 「無ければ作成」する。data/ 配下のサンプル PPTX 3 点を投入する。
+
+冪等性: doc_id はファイルパスから決定的に導出し、毎回 documents / chunks の
+既存アイテムを全削除してから取り込む。これにより何度再実行しても重複が増えず、
+スキーマ変更（slide_number の付け方など）も常に最新の状態へ入れ替わる。
 """
+import hashlib
 import json
 import sys
 import uuid
@@ -109,6 +114,32 @@ def get_embedding(openai_client: AzureOpenAI, text: str) -> list[float]:
     )
 
 
+def _doc_id_for(path: str) -> str:
+    """ファイルパスから決定的な doc_id を導出する（再取り込みで重複させないため）."""
+    digest = hashlib.sha1(path.encode("utf-8")).hexdigest()[:16]
+    return f"doc_{digest}"
+
+
+def _purge_all(container, pk_field: str, label: str) -> int:
+    """コンテナ内の全アイテムを削除する（クリーンな再取り込みのため）.
+
+    pk_field はそのコンテナのパーティションキーに対応するフィールド名
+    （documents は 'type'、chunks は 'document_id'）。削除に必要な id と
+    パーティションキーだけを射影し、chunks の埋め込みベクトルまで取得しない。
+    """
+    items = list(
+        container.query_items(
+            query=f"SELECT c.id, c.{pk_field} AS pk FROM c",
+            enable_cross_partition_query=True,
+        )
+    )
+    for item in items:
+        container.delete_item(item=item["id"], partition_key=item["pk"])
+    if items:
+        print(f"  ↻ {label}: 既存 {len(items)} 件を削除（クリーン再取り込み）")
+    return len(items)
+
+
 def _setup_containers(db):
     """documents (/type) と chunks (/document_id + vector policy) を無ければ作成する."""
     documents = db.create_container_if_not_exists(
@@ -129,7 +160,7 @@ def _setup_containers(db):
 # ----------------------------------------
 def ingest_document(openai_client, documents, chunks, spec: dict) -> int:
     print(f"処理開始: {spec['title']}")
-    doc_id = str(uuid.uuid4())
+    doc_id = _doc_id_for(spec["path"])
     now_iso = datetime.now(timezone.utc).isoformat()
     documents.upsert_item(
         {
@@ -173,6 +204,11 @@ def main() -> None:
         settings.cosmos_endpoint, credential=settings.cosmos_key
     ).get_database_client(settings.cosmos_database)
     documents, chunks = _setup_containers(db)
+
+    # 取り込み前にクリーンアップ（旧ランダム doc_id データや前回分を一掃して重複防止）。
+    # 子（chunks）→ 親（documents）の順で削除する。
+    _purge_all(chunks, "document_id", "chunks")
+    _purge_all(documents, "type", "documents")
 
     total = 0
     for spec in SAMPLE_FILES:
