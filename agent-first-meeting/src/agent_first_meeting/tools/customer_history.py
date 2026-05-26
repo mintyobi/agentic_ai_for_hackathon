@@ -2,28 +2,17 @@
 import json
 from typing import Annotated
 
-from azure.cosmos import CosmosClient
 from semantic_kernel.functions import kernel_function
 
+from agent_first_meeting._azure_clients import make_cosmos_client, strip_internal
 from agent_first_meeting.config import settings
-
-
-_INTERNAL_FIELDS = {"_rid", "_self", "_etag", "_attachments", "_ts"}
-
-
-def _strip_internal(item: dict) -> dict:
-    return {k: v for k, v in item.items() if k not in _INTERNAL_FIELDS}
 
 
 class CustomerHistoryPlugin:
     """`customers` / `meetings` コンテナから顧客情報と過去面談を取得する SK プラグイン."""
 
     def __init__(self) -> None:
-        cosmos = CosmosClient(
-            settings.cosmos_endpoint,
-            credential=settings.cosmos_key,
-        )
-        db = cosmos.get_database_client(settings.cosmos_database)
+        db = make_cosmos_client().get_database_client(settings.cosmos_database)
         self._customers = db.get_container_client("customers")
         self._meetings = db.get_container_client("meetings")
 
@@ -53,11 +42,11 @@ class CustomerHistoryPlugin:
                 ensure_ascii=False,
             )
 
-        customer = _strip_internal(customers[0])
+        customer = strip_internal(customers[0])
         company_id = customer["companyId"]
 
         meetings = [
-            _strip_internal(m)
+            strip_internal(m)
             for m in self._meetings.query_items(
                 query=(
                     "SELECT * FROM c WHERE c.companyId = @id ORDER BY c.round DESC"

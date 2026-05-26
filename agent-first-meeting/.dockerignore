@@ -1,0 +1,24 @@
+# シークレット・ローカル環境はイメージ／ビルドコンテキストに含めない（最重要）
+.env
+.env.*
+.venv/
+venv/
+
+# キャッシュ・生成物
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ランタイムに不要
+tests/
+scripts/
+docs/
+*.md
+*.sh
+*.json
+.git/
+.gitignore
