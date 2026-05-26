@@ -7,10 +7,9 @@
 import json
 from typing import Annotated
 
-from azure.cosmos import CosmosClient
-from openai import AzureOpenAI
 from semantic_kernel.functions import kernel_function
 
+from agent_first_meeting._azure_clients import make_azure_openai, make_cosmos_client
 from agent_first_meeting.config import settings
 
 
@@ -18,15 +17,8 @@ class CaseSearchPlugin:
     """`documents` / `chunks` コンテナをハイブリッド検索する SK プラグイン."""
 
     def __init__(self) -> None:
-        self._openai = AzureOpenAI(
-            api_key=settings.azure_openai_api_key,
-            azure_endpoint=settings.azure_openai_endpoint,
-            api_version=settings.azure_openai_api_version,
-        )
-        db = CosmosClient(
-            settings.cosmos_endpoint,
-            credential=settings.cosmos_key,
-        ).get_database_client(settings.cosmos_database)
+        self._openai = make_azure_openai()
+        db = make_cosmos_client().get_database_client(settings.cosmos_database)
         self._documents = db.get_container_client("documents")
         self._chunks = db.get_container_client("chunks")
 

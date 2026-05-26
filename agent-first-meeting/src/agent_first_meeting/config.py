@@ -10,15 +10,17 @@ class Settings(BaseSettings):
     )
 
     # Azure AI Foundry / Azure OpenAI
+    # api_key は空なら Managed Identity（DefaultAzureCredential）に自動フォールバック
     azure_openai_endpoint: str
-    azure_openai_api_key: str
+    azure_openai_api_key: str | None = None
     azure_openai_chat_deployment: str = "gpt-4.1"
     azure_openai_embedding_deployment: str = "text-embedding-3-large"
     azure_openai_api_version: str = "2024-12-01-preview"
 
     # Azure Cosmos DB
+    # key は空なら Managed Identity（データプレーン RBAC）に自動フォールバック
     cosmos_endpoint: str
-    cosmos_key: str
+    cosmos_key: str | None = None
     cosmos_database: str = "sales-agent"
 
     # Azure Blob Storage

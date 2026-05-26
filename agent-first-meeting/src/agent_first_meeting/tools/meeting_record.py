@@ -10,13 +10,13 @@ import logging
 from datetime import datetime, timezone
 from typing import Annotated
 
-from azure.cosmos import CosmosClient
 from azure.cosmos.exceptions import (
     CosmosResourceExistsError,
     CosmosResourceNotFoundError,
 )
 from semantic_kernel.functions import kernel_function
 
+from agent_first_meeting._azure_clients import make_cosmos_client
 from agent_first_meeting._company_id import deterministic_company_id
 from agent_first_meeting._meeting_select import select_target_meeting
 from agent_first_meeting.config import settings
@@ -35,11 +35,7 @@ class MeetingRecordPlugin:
     """生成資料と次回アクションを meetings コンテナに保存する SK プラグイン."""
 
     def __init__(self) -> None:
-        cosmos = CosmosClient(
-            settings.cosmos_endpoint,
-            credential=settings.cosmos_key,
-        )
-        db = cosmos.get_database_client(settings.cosmos_database)
+        db = make_cosmos_client().get_database_client(settings.cosmos_database)
         self._customers = db.get_container_client("customers")
         self._meetings = db.get_container_client("meetings")
 

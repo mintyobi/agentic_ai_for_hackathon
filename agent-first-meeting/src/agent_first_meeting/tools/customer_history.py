@@ -2,9 +2,9 @@
 import json
 from typing import Annotated
 
-from azure.cosmos import CosmosClient
 from semantic_kernel.functions import kernel_function
 
+from agent_first_meeting._azure_clients import make_cosmos_client
 from agent_first_meeting.config import settings
 
 
@@ -19,11 +19,7 @@ class CustomerHistoryPlugin:
     """`customers` / `meetings` コンテナから顧客情報と過去面談を取得する SK プラグイン."""
 
     def __init__(self) -> None:
-        cosmos = CosmosClient(
-            settings.cosmos_endpoint,
-            credential=settings.cosmos_key,
-        )
-        db = cosmos.get_database_client(settings.cosmos_database)
+        db = make_cosmos_client().get_database_client(settings.cosmos_database)
         self._customers = db.get_container_client("customers")
         self._meetings = db.get_container_client("meetings")
 

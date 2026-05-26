@@ -12,6 +12,7 @@ from semantic_kernel.connectors.ai.open_ai import (
 from semantic_kernel.filters import FilterTypes
 from semantic_kernel.functions import KernelArguments
 
+from agent_first_meeting._azure_clients import openai_token_provider
 from agent_first_meeting.config import settings
 from agent_first_meeting.tools.case_search import CaseSearchPlugin
 from agent_first_meeting.tools.customer_history import CustomerHistoryPlugin
@@ -163,13 +164,20 @@ def _build(name: str, instructions: str) -> tuple[ChatCompletionAgent, ToolResul
         function_choice_behavior=FunctionChoiceBehavior.Auto(),
     )
 
+    # キーがあればキー認証、無ければ Entra トークン（Managed Identity）で認証
+    chat_kwargs = dict(
+        endpoint=settings.azure_openai_endpoint,
+        deployment_name=settings.azure_openai_chat_deployment,
+        api_version=settings.azure_openai_api_version,
+    )
+    token_provider = openai_token_provider()
+    if token_provider is None:
+        chat_kwargs["api_key"] = settings.azure_openai_api_key
+    else:
+        chat_kwargs["ad_token_provider"] = token_provider
+
     agent = ChatCompletionAgent(
-        service=AzureChatCompletion(
-            api_key=settings.azure_openai_api_key,
-            endpoint=settings.azure_openai_endpoint,
-            deployment_name=settings.azure_openai_chat_deployment,
-            api_version=settings.azure_openai_api_version,
-        ),
+        service=AzureChatCompletion(**chat_kwargs),
         name=name,
         instructions=instructions,
         plugins=[
