@@ -4,15 +4,8 @@ from typing import Annotated
 
 from semantic_kernel.functions import kernel_function
 
-from agent_first_meeting._azure_clients import make_cosmos_client
+from agent_first_meeting._azure_clients import make_cosmos_client, strip_internal
 from agent_first_meeting.config import settings
-
-
-_INTERNAL_FIELDS = {"_rid", "_self", "_etag", "_attachments", "_ts"}
-
-
-def _strip_internal(item: dict) -> dict:
-    return {k: v for k, v in item.items() if k not in _INTERNAL_FIELDS}
 
 
 class CustomerHistoryPlugin:
@@ -49,11 +42,11 @@ class CustomerHistoryPlugin:
                 ensure_ascii=False,
             )
 
-        customer = _strip_internal(customers[0])
+        customer = strip_internal(customers[0])
         company_id = customer["companyId"]
 
         meetings = [
-            _strip_internal(m)
+            strip_internal(m)
             for m in self._meetings.query_items(
                 query=(
                     "SELECT * FROM c WHERE c.companyId = @id ORDER BY c.round DESC"

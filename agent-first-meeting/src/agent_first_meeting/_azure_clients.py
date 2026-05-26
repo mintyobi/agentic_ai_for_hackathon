@@ -17,6 +17,14 @@ from agent_first_meeting.config import settings
 # Azure OpenAI / Cognitive Services 用の AAD スコープ
 COGNITIVE_SCOPE = "https://cognitiveservices.azure.com/.default"
 
+# Cosmos が返すシステム項目（API レスポンスや再 upsert からは除外する）
+INTERNAL_FIELDS = frozenset({"_rid", "_self", "_etag", "_attachments", "_ts"})
+
+
+def strip_internal(item: dict) -> dict:
+    """Cosmos ドキュメントからシステム項目（_rid 等）を除いた dict を返す."""
+    return {k: v for k, v in item.items() if k not in INTERNAL_FIELDS}
+
 _credential = None
 
 
