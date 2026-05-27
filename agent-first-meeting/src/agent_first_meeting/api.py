@@ -7,11 +7,7 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from semantic_kernel.contents import (
-    FunctionCallContent,
-    FunctionResultContent,
-    StreamingTextContent,
-)
+from semantic_kernel.contents import StreamingTextContent
 from sse_starlette.sse import EventSourceResponse
 
 from agent_first_meeting.agent import build_agent, build_followup_agent
@@ -121,34 +117,36 @@ async def generate(req: GenerateRequest) -> EventSourceResponse:
         document_url: str | None = None
         accumulated_text = ""
 
+        def _drain_tool_events() -> list[dict]:
+            """tracker が記録したツール進捗を SSE 形式に変換して取り出す.
+
+            SK 1.42 の invoke_stream では FunctionCall/Result が stream に流れない
+            ため、Filter(ToolResultTracker) が貯めたイベントをここでドレインする。
+            """
+            drained: list[dict] = []
+            while tracker.events:
+                ev_type, tool_name = tracker.events.pop(0)
+                drained.append(_sse(ev_type, {"name": tool_name}))
+            return drained
+
         try:
             yield _sse("thought", {"text": f"{agent_label}面談エージェントを起動中..."})
 
             async for chunk in agent.invoke_stream(messages=user_message):
+                # ツール呼び出し進捗を流す
+                for ev in _drain_tool_events():
+                    yield ev
                 message = chunk.message
                 for item in message.items:
-                    if isinstance(item, FunctionCallContent):
-                        yield _sse(
-                            "tool",
-                            {
-                                "name": item.function_name,
-                                "args": item.arguments or "",
-                            },
-                        )
-                    elif isinstance(item, FunctionResultContent):
-                        result_str = str(item.result)
-                        yield _sse(
-                            "tool_result",
-                            {
-                                "name": item.function_name,
-                                "result": result_str[:300],
-                            },
-                        )
-                    elif isinstance(item, StreamingTextContent):
+                    if isinstance(item, StreamingTextContent):
                         text = item.text or ""
                         if text:
                             accumulated_text += text
                             yield _sse("message", {"text": text})
+
+            # ループ後に残ったツールイベントを流し切る
+            for ev in _drain_tool_events():
+                yield ev
 
             # Filter から確実に document_url / meeting_id / invoked_tools を取得
             document_url = tracker.document_url

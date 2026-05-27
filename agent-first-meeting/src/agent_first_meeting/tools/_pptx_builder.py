@@ -7,9 +7,10 @@ from io import BytesIO
 
 from pptx import Presentation
 
-# 固定スライドのテンプレート文言（Phase 3 ではダミー値）
-DEFAULT_PRODUCT_NAME = "テスト商品"
-DEFAULT_PRODUCT_PRICE_JPY = 10
+# 「自社商品 / 費用」スライドの既定文言。実値は config（.env）で上書きする想定。
+# 価格 0 以下は「金額未設定」とみなし、偽の金額の代わりに「別途お見積もり」を出す。
+DEFAULT_PRODUCT_NAME = "弊社ソリューション"
+DEFAULT_PRODUCT_PRICE_JPY = 0
 AGENDA_ITEMS = [
     "1. ご挨拶",
     "2. 業界トレンドとお客様の課題",
@@ -66,13 +67,18 @@ def build_presentation_bytes(
         f"商品名：{product_name}\n本日はこちらの商品をご提案いたします。",
     )
 
-    # 6. 費用
+    # 6. 費用（価格未設定なら偽の金額を出さず「別途お見積もり」とする）
+    price_line = (
+        f"価格：{product_price_jpy:,} 円（税別）"
+        if product_price_jpy > 0
+        else "価格：別途お見積もり"
+    )
     _add_content_slide(
         prs,
         "費用について",
         (
             f"商品「{product_name}」のご提供価格\n"
-            f"価格：{product_price_jpy:,} 円（税別）\n"
+            f"{price_line}\n"
             "※ 詳細条件は別途ご相談のうえ決定いたします。"
         ),
     )

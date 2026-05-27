@@ -29,20 +29,30 @@ class ToolResultTracker:
     SK 1.42 の `invoke_stream` では FunctionCallContent / FunctionResultContent
     が streaming items として流れない（最終テキスト応答のみ流れる）ため、
     Filter で kernel function 呼び出しをフックして必要な結果を集める。
+    あわせて (event_type, tool_name) を `events` に貯め、API 側が SSE で
+    ツール呼び出しの進捗を配信できるようにする。
     """
 
     def __init__(self) -> None:
         self.invoked_tools: set[str] = set()
         self.document_url: str | None = None
         self.meeting_id: str | None = None
+        # SSE で進捗表示するためのイベントキュー。(event_type, tool_name) を貯め、
+        # API 側が invoke_stream のチャンク間でドレインして yield する。
+        self.events: list[tuple[str, str]] = []
 
     async def hook(self, context, next):  # noqa: A002 (SK API は kw 名 'next' を要求)
-        await next(context)
         try:
             fn_name = context.function.name
         except Exception:  # noqa: BLE001
+            fn_name = None
+        if fn_name:
+            self.events.append(("tool", fn_name))
+        await next(context)
+        if not fn_name:
             return
         self.invoked_tools.add(fn_name)
+        self.events.append(("tool_result", fn_name))
         try:
             result_obj = context.result
             # SK の FunctionResult は .value 経由でアクセス
@@ -87,7 +97,7 @@ FIRST_AGENT_INSTRUCTIONS = """\
    - **cover_subtitle**: 「<会社名> 様向け / <年月> / 担当: <営業名>」の形式
    - **industry_body**: 業界トレンドと顧客の課題を 3〜5 行の箇条書き（1 行 = 1 項目、改行区切り）
    - **position_body**: 取引相手の役職（経営層 / 部門責任者 / 担当者）に響く論点を 3〜5 行の箇条書き
-   - ※ 自社商品スライドと費用スライドはプラグイン側で固定値（テスト商品 / 10 円）が入るので指定不要
+   - ※ 自社商品スライドと費用スライドはプラグイン側で既定値（config 設定。未設定時はプレースホルダ＝価格は「別途お見積もり」）が入るので指定不要
 5. **generate_pptx** で 6 スライド（表紙 / 目次 / 業界向け / 役職向け / 自社商品 / 費用）の提案資料を作成する
 6. **save_meeting_record** で生成資料と次回アクションを meetings コンテナに保存する
    （これが follow-up エージェントへの引き継ぎ点）
