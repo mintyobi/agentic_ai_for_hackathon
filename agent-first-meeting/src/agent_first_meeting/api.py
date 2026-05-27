@@ -4,6 +4,7 @@ import logging
 import re
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
+from urllib.parse import urlparse
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -92,6 +93,9 @@ async def generate(req: GenerateRequest) -> EventSourceResponse:
         req.company_name, req.meeting_status,
     )
 
+    # HP取得ツールの許可ホスト（入力された顧客HPのホストのみ取得可にする）
+    fetch_host = urlparse(req.homepage_url).hostname if req.homepage_url else None
+
     async def event_stream() -> AsyncGenerator[dict, None]:
         # meeting_status をトリガーにしてエージェントを分岐（リクエスト毎に build）
         if req.meeting_status == "followup":
@@ -132,10 +136,10 @@ async def generate(req: GenerateRequest) -> EventSourceResponse:
                         {"text": "前回実績メモの記録に失敗しました（処理は継続します）。"},
                     )
 
-            agent, tracker = build_followup_agent()
+            agent, tracker = build_followup_agent(allowed_fetch_host=fetch_host)
             agent_label = "2回目以降"
         else:
-            agent, tracker = build_agent()
+            agent, tracker = build_agent(allowed_fetch_host=fetch_host)
             agent_label = "初回"
 
         document_url: str | None = None

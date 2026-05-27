@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     default_product_name: str = "弊社ソリューション"
     default_product_price_jpy: int = 0
 
+    # 顧客HP取得ツールの有効/無効。公開デプロイでプロンプトインジェクション経路を
+    # 完全に断ちたい場合は false にする（エージェントから fetch ツールを外す）。
+    web_fetch_enabled: bool = True
+
     # App
     app_log_level: str = "INFO"
     # CORS で受け付けるオリジン（カンマ区切り）。本番では Streamlit / フロントの
