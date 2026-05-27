@@ -5,6 +5,7 @@ agent-first-meeting の FastAPI エンドポイント (/api/first-meeting/genera
 """
 import json
 import os
+import time
 
 import httpx
 import streamlit as st
@@ -13,6 +14,11 @@ API_URL = os.environ.get(
     "FIRST_MEETING_API_URL",
     "http://127.0.0.1:8000/api/first-meeting/generate",
 )
+# 公開時の不正利用対策：共有アクセスコード（未設定なら制限なし＝ローカル/開発）。
+# 審査員にはこのコードを提出フォームに記載して共有する。
+ACCESS_CODE = os.environ.get("APP_ACCESS_CODE", "")
+# 1セッションあたりの連続実行クールダウン秒（コスト暴走の保険）
+MIN_INTERVAL_SEC = int(os.environ.get("APP_MIN_INTERVAL_SEC", "15"))
 
 
 st.set_page_config(
@@ -26,6 +32,18 @@ st.caption(
     "顧客情報を入力すると、AI エージェントが社内事例を検索して "
     "PowerPoint 提案資料を生成します"
 )
+
+# 公開時のアクセスゲート：コードが設定されていれば、一致するまで以降を表示しない。
+if ACCESS_CODE and not st.session_state.get("authed"):
+    st.info("このデモはアクセスコードで保護されています。配布されたコードを入力してください。")
+    code = st.text_input("アクセスコード", type="password")
+    if st.button("入室"):
+        if code == ACCESS_CODE:
+            st.session_state["authed"] = True
+            st.rerun()
+        else:
+            st.error("アクセスコードが正しくありません。")
+    st.stop()
 
 with st.form("input_form"):
     col1, col2 = st.columns(2)
@@ -96,6 +114,14 @@ if submitted:
     if not company_name:
         st.error("会社名は必須です")
         st.stop()
+
+    # 連続実行クールダウン（1セッションあたりのコスト暴走を抑える保険）
+    _last = st.session_state.get("last_submit_ts", 0.0)
+    _wait = MIN_INTERVAL_SEC - (time.time() - _last)
+    if _wait > 0:
+        st.warning(f"連続実行を防ぐため、あと約 {int(_wait) + 1} 秒お待ちください。")
+        st.stop()
+    st.session_state["last_submit_ts"] = time.time()
 
     request_body = {
         "companyName": company_name,
