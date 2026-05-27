@@ -1,12 +1,15 @@
 """顧客情報・面談履歴の取得プラグイン (Cosmos DB)."""
 import json
+import logging
 from typing import Annotated
 
 from semantic_kernel.functions import kernel_function
 
 from agent_first_meeting._azure_clients import make_cosmos_client, strip_internal
 from agent_first_meeting.config import settings
+from agent_first_meeting.tools._blob_sas import BlobSasSigner, extract_blob_name
 
+logger = logging.getLogger(__name__)
 
 class CustomerHistoryPlugin:
     """`customers` / `meetings` コンテナから顧客情報と過去面談を取得する SK プラグイン."""
@@ -15,6 +18,31 @@ class CustomerHistoryPlugin:
         db = make_cosmos_client().get_database_client(settings.cosmos_database)
         self._customers = db.get_container_client("customers")
         self._meetings = db.get_container_client("meetings")
+        # 履歴中の preMeetingDocumentUrl を読み出し時に再署名するための signer。
+        # Blob を使わない経路では作らないよう遅延初期化する。
+        self._signer: BlobSasSigner | None = None
+
+    def _refresh_document_url(self, meeting: dict) -> None:
+        """meeting の preMeetingDocumentUrl を、blob 名から新しい SAS URL に差し替える.
+
+        保存されている URL は SAS を落とした素の URL（または旧データでは失効 SAS 付き）
+        なので、blob 名から都度発行し直す。失敗しても履歴取得は止めない（best-effort）。
+        """
+        blob_name = meeting.get("documentBlob") or extract_blob_name(
+            meeting.get("preMeetingDocumentUrl") or ""
+        )
+        if not blob_name:
+            return
+        try:
+            if self._signer is None:
+                self._signer = BlobSasSigner()
+            meeting["preMeetingDocumentUrl"] = self._signer.sign_blob_name(blob_name)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "failed to re-sign preMeetingDocumentUrl (blob=%s)",
+                blob_name,
+                exc_info=True,
+            )
 
     @kernel_function(
         description=(
@@ -55,6 +83,8 @@ class CustomerHistoryPlugin:
                 partition_key=company_id,
             )
         ]
+        for meeting in meetings:
+            self._refresh_document_url(meeting)
 
         return json.dumps(
             {"customer": customer, "meetings": meetings},

@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     blob_container: str = "generated-documents"
     blob_account_key: str | None = None  # 空なら DefaultAzureCredential を使う
 
+    # 提案資料の「自社商品 / 費用」スライドに入れる値。
+    # 既定はプレースホルダ（価格 0 = 「別途お見積もり」）にしてあり、
+    # 実際の商品・価格は .env で上書きする。コードに偽の金額を埋め込まない。
+    default_product_name: str = "弊社ソリューション"
+    default_product_price_jpy: int = 0
+
     # App
     app_log_level: str = "INFO"
     # CORS で受け付けるオリジン（カンマ区切り）。本番では Streamlit / フロントの

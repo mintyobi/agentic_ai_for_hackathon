@@ -20,6 +20,7 @@ from agent_first_meeting._azure_clients import make_cosmos_client, strip_interna
 from agent_first_meeting._company_id import deterministic_company_id
 from agent_first_meeting._meeting_select import select_target_meeting
 from agent_first_meeting.config import settings
+from agent_first_meeting.tools._blob_sas import extract_blob_name
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,13 @@ class MeetingRecordPlugin:
         now_iso = datetime.now(timezone.utc).isoformat()
         initial_round = self._estimate_initial_round(company_id)
 
+        # SAS トークンは時限なので、永続データには blob 名だけを保存する。
+        # 履歴を読むときに customer_history が SAS を再発行する（失効 URL を残さない）。
+        document_blob = extract_blob_name(document_url)
+        # preMeetingDocumentUrl は「失効したトークンを誤って信頼させない」よう
+        # クエリ（SAS）を落とした素の Blob URL を保存する。
+        bare_url = document_url.split("?", 1)[0] if document_url else document_url
+
         # round 番号を +1 しつつリトライ（並行 create で 409 が返ったら次の番号に進む）
         for round_num in range(initial_round, initial_round + _MAX_ROUND_RETRY):
             record = {
@@ -113,7 +121,8 @@ class MeetingRecordPlugin:
                 "round": round_num,
                 "scheduledAt": now_iso,
                 "status": "scheduled",
-                "preMeetingDocumentUrl": document_url,
+                "preMeetingDocumentUrl": bare_url,
+                "documentBlob": document_blob,
                 "proposedTitle": proposed_title,
                 "outcomes": None,
                 "nextActions": next_actions,
