@@ -7,11 +7,7 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from semantic_kernel.contents import (
-    FunctionCallContent,
-    FunctionResultContent,
-    StreamingTextContent,
-)
+from semantic_kernel.contents import StreamingTextContent
 from sse_starlette.sse import EventSourceResponse
 
 from agent_first_meeting.agent import build_agent, build_followup_agent
@@ -19,6 +15,7 @@ from agent_first_meeting.config import settings
 from agent_first_meeting.logging_config import setup_logging
 from agent_first_meeting.schemas import GenerateRequest, to_user_message
 from agent_first_meeting.tools.customer_history import CustomerHistoryPlugin
+from agent_first_meeting.tools.meeting_record import MeetingRecordPlugin
 
 PPTX_URL_PATTERN = re.compile(r"https://[^\s)\]」]+?\.pptx(?:\?[^\s)\]」]*)?")
 
@@ -65,25 +62,26 @@ def _sse(event: str, payload: dict) -> dict:
 
 def _check_followup_precondition(
     history_plugin: CustomerHistoryPlugin, company_name: str
-) -> tuple[bool, str | None]:
-    """follow-up モードで前提となる過去面談があるか確認する.
+) -> tuple[bool, str | None, int | None]:
+    """follow-up モードで前提となる過去面談があるか確認し、直近 round を返す.
 
     Returns:
-        (ok, error_message). ok=False のとき error_message に理由が入る。
+        (ok, error_message, latest_round). ok=False のとき error_message に理由。
     """
     history_json = history_plugin.get_customer_history(company_name)
     try:
         history = json.loads(history_json)
     except json.JSONDecodeError as e:
         logger.exception("invalid history json: %s", e)
-        return False, "履歴の取得に失敗しました"
+        return False, "履歴の取得に失敗しました", None
     meetings = history.get("meetings") or []
     if not meetings:
         return False, (
             f"「{company_name}」の過去面談が見つかりません。"
             "「初回」を選択して初回面談を先に実施してください。"
-        )
-    return True, None
+        ), None
+    latest_round = max((m.get("round", 0) for m in meetings), default=0)
+    return True, None, latest_round
 
 
 @app.post("/api/first-meeting/generate")
@@ -98,7 +96,7 @@ async def generate(req: GenerateRequest) -> EventSourceResponse:
         # meeting_status をトリガーにしてエージェントを分岐（リクエスト毎に build）
         if req.meeting_status == "followup":
             # 早期 return: 過去面談がなければ followup は意味をなさない
-            ok, reason = _check_followup_precondition(
+            ok, reason, latest_round = _check_followup_precondition(
                 app.state.history_plugin, req.company_name
             )
             if not ok:
@@ -112,6 +110,28 @@ async def generate(req: GenerateRequest) -> EventSourceResponse:
                     },
                 )
                 return
+
+            # 前回実績メモは「エージェント実行前」に、直近 round を明示してサーバ側で
+            # 記録する。LLM の呼び出し順に依存させると、今回作る新レコード（最大 round）
+            # に誤って書き込まれて前回実績が確定しなくなるため、ここで決定的に確定させる。
+            notes = req.last_meeting_notes.strip()
+            if notes:
+                yield _sse(
+                    "thought",
+                    {"text": f"前回面談（round {latest_round}）の実績メモを記録中..."},
+                )
+                try:
+                    MeetingRecordPlugin().record_meeting_outcomes(
+                        req.company_name, notes, latest_round or 0
+                    )
+                    yield _sse("tool_result", {"name": "record_meeting_outcomes"})
+                except Exception:  # noqa: BLE001
+                    logger.exception("failed to record previous outcomes (continuing)")
+                    yield _sse(
+                        "thought",
+                        {"text": "前回実績メモの記録に失敗しました（処理は継続します）。"},
+                    )
+
             agent, tracker = build_followup_agent()
             agent_label = "2回目以降"
         else:
@@ -121,34 +141,36 @@ async def generate(req: GenerateRequest) -> EventSourceResponse:
         document_url: str | None = None
         accumulated_text = ""
 
+        def _drain_tool_events() -> list[dict]:
+            """tracker が記録したツール進捗を SSE 形式に変換して取り出す.
+
+            SK 1.42 の invoke_stream では FunctionCall/Result が stream に流れない
+            ため、Filter(ToolResultTracker) が貯めたイベントをここでドレインする。
+            """
+            drained: list[dict] = []
+            while tracker.events:
+                ev_type, tool_name = tracker.events.pop(0)
+                drained.append(_sse(ev_type, {"name": tool_name}))
+            return drained
+
         try:
             yield _sse("thought", {"text": f"{agent_label}面談エージェントを起動中..."})
 
             async for chunk in agent.invoke_stream(messages=user_message):
+                # ツール呼び出し進捗を流す
+                for ev in _drain_tool_events():
+                    yield ev
                 message = chunk.message
                 for item in message.items:
-                    if isinstance(item, FunctionCallContent):
-                        yield _sse(
-                            "tool",
-                            {
-                                "name": item.function_name,
-                                "args": item.arguments or "",
-                            },
-                        )
-                    elif isinstance(item, FunctionResultContent):
-                        result_str = str(item.result)
-                        yield _sse(
-                            "tool_result",
-                            {
-                                "name": item.function_name,
-                                "result": result_str[:300],
-                            },
-                        )
-                    elif isinstance(item, StreamingTextContent):
+                    if isinstance(item, StreamingTextContent):
                         text = item.text or ""
                         if text:
                             accumulated_text += text
                             yield _sse("message", {"text": text})
+
+            # ループ後に残ったツールイベントを流し切る
+            for ev in _drain_tool_events():
+                yield ev
 
             # Filter から確実に document_url / meeting_id / invoked_tools を取得
             document_url = tracker.document_url
@@ -170,10 +192,19 @@ async def generate(req: GenerateRequest) -> EventSourceResponse:
                 warnings.append(msg)
                 logger.warning(msg)
 
+            # 資料は出たが必須ツールが欠けている場合は "partial"（警告付き完了）。
+            # フロントは partial を「生成完了（警告あり）」として表示する。
+            if not document_url:
+                status = "error"
+            elif missing:
+                status = "partial"
+            else:
+                status = "success"
+
             yield _sse(
                 "done",
                 {
-                    "status": "success" if document_url else "error",
+                    "status": status,
                     "data": {
                         "documentUrl": document_url,
                         "message": accumulated_text,

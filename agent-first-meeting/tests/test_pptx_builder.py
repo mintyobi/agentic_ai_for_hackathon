@@ -81,22 +81,23 @@ def test_position_body_renders_role_specific_points():
 
 
 def test_product_slide_uses_default_product_name():
-    """自社商品スライドに既定の商品名（テスト商品）が入ること."""
+    """自社商品スライドに既定の商品名（プレースホルダ）が入ること."""
     prs = _open_generated()
     product_slide = prs.slides[4]
     body_text = product_slide.placeholders[1].text
     assert DEFAULT_PRODUCT_NAME in body_text
-    assert DEFAULT_PRODUCT_NAME == "テスト商品"
+    # 偽の商品名（テスト商品）を埋め込まないこと
+    assert DEFAULT_PRODUCT_NAME != "テスト商品"
 
 
-def test_cost_slide_includes_default_price():
-    """費用スライドに既定価格（10 円）が入ること."""
+def test_cost_slide_omits_fake_price_when_unset():
+    """既定価格 0 のときは偽の金額を出さず「別途お見積もり」にすること."""
     prs = _open_generated()
     cost_slide = prs.slides[5]
     body_text = cost_slide.placeholders[1].text
-    assert DEFAULT_PRODUCT_PRICE_JPY == 10
-    assert "10" in body_text
-    assert "円" in body_text
+    assert DEFAULT_PRODUCT_PRICE_JPY == 0
+    assert "別途お見積もり" in body_text
+    assert "10 円" not in body_text
     assert DEFAULT_PRODUCT_NAME in body_text
 
 

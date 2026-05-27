@@ -1,4 +1,5 @@
 """API のリクエスト/レスポンス スキーマ."""
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -67,8 +68,10 @@ def to_user_message(req: GenerateRequest) -> str:
         if position_category
         else "不明（役職表記から判定できなかったので、あなたが判断してください）"
     )
+    today = datetime.now().strftime("%Y年%m月%d日")
     message = (
         f"以下の顧客の{status_label}に向けたアポ資料を作ってください。\n\n"
+        f"- 本日の日付：{today}（表紙やサブタイトルの年月はこの日付を基準にすること）\n"
         f"- 会社名：{req.company_name}\n"
         f"- 業種：{req.industry}\n"
         f"- 規模：{req.scale}\n"
@@ -81,7 +84,11 @@ def to_user_message(req: GenerateRequest) -> str:
         f"- 担当営業：{req.salesperson or '（未記入）'}\n"
         f"- 面談ステータス：{status_label}\n"
     )
-    # follow-up のときだけ「前回面談メモ」を渡す（初回には存在しない情報なので出さない）
+    # follow-up のときだけ「前回面談メモ」を渡す（初回には存在しない情報なので出さない）。
+    # メモはサーバ側で既に前回 outcomes として記録済みなので、ここでは提案の素材として渡す。
     if req.meeting_status == "followup":
-        message += f"- 前回面談メモ：{req.last_meeting_notes or '（未記入）'}\n"
+        message += (
+            f"- 前回面談メモ（※システムが前回 outcomes として記録済み）："
+            f"{req.last_meeting_notes or '（未記入）'}\n"
+        )
     return message

@@ -17,11 +17,11 @@ from agent_first_meeting.tools._web_fetch_helpers import (
 )
 
 
-def _safe_url_patch():
-    """is_safe_public_url を常に OK 扱いにする patch（SSRF ガード以外を試験するため）."""
+def _safe_url_patch(ip: str = "93.184.216.34"):
+    """safe_resolved_ip を常に OK 扱いにする patch（SSRF ガード以外を試験するため）."""
     return patch(
-        "agent_first_meeting.tools._web_fetch_helpers.is_safe_public_url",
-        return_value=(True, "ok"),
+        "agent_first_meeting.tools._web_fetch_helpers.safe_resolved_ip",
+        return_value=(True, "ok", ip),
     )
 
 
@@ -127,10 +127,10 @@ def test_follows_redirect_and_revalidates_each_hop():
 
     def fake_safe(url):
         calls["n"] += 1
-        return True, "ok"
+        return True, "ok", "93.184.216.34"
 
     with patch(
-        "agent_first_meeting.tools._web_fetch_helpers.is_safe_public_url",
+        "agent_first_meeting.tools._web_fetch_helpers.safe_resolved_ip",
         side_effect=fake_safe,
     ), _client_with(handler) as client:
         status, final_url, _body, _enc = fetch_with_safe_redirects(
@@ -152,17 +152,41 @@ def test_redirect_to_unsafe_url_is_blocked():
 
     # 1 段目だけ True、それ以降は本物の判定にフォールバック
     real_safe = __import__(
-        "agent_first_meeting.tools._url_safety", fromlist=["is_safe_public_url"]
-    ).is_safe_public_url
+        "agent_first_meeting.tools._url_safety", fromlist=["safe_resolved_ip"]
+    ).safe_resolved_ip
 
     def fake_safe(url):
         if url.endswith("/start"):
-            return True, "ok"
+            return True, "ok", "93.184.216.34"
         return real_safe(url)
 
     with patch(
-        "agent_first_meeting.tools._web_fetch_helpers.is_safe_public_url",
+        "agent_first_meeting.tools._web_fetch_helpers.safe_resolved_ip",
         side_effect=fake_safe,
     ), _client_with(handler) as client:
         with pytest.raises(PermissionError):
             fetch_with_safe_redirects(client, "https://example.com/start")
+
+
+def test_fetch_pins_connection_to_resolved_ip():
+    """検証済み IP へ接続し、Host ヘッダと最終 URL は元ホスト名に保たれること."""
+    seen = {}
+
+    def handler(req):
+        seen["host"] = req.url.host
+        seen["host_header"] = req.headers.get("Host")
+        return httpx.Response(
+            200, headers={"content-type": "text/html"}, content=b"<p>ok</p>"
+        )
+
+    with patch(
+        "agent_first_meeting.tools._web_fetch_helpers.safe_resolved_ip",
+        return_value=(True, "ok", "93.184.216.34"),
+    ), _client_with(handler) as client:
+        status, final_url, _body, _enc = fetch_with_safe_redirects(
+            client, "https://example.com/x"
+        )
+    assert status == 200
+    assert seen["host"] == "93.184.216.34"       # 接続先は検証済み IP
+    assert seen["host_header"] == "example.com"  # Host は元ホスト名
+    assert "example.com" in final_url            # 利用側にはホスト名を返す

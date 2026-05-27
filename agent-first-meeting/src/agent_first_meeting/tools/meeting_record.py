@@ -10,21 +10,21 @@ import logging
 from datetime import datetime, timezone
 from typing import Annotated
 
-from azure.cosmos import CosmosClient
 from azure.cosmos.exceptions import (
     CosmosResourceExistsError,
     CosmosResourceNotFoundError,
 )
 from semantic_kernel.functions import kernel_function
 
+from agent_first_meeting._azure_clients import make_cosmos_client, strip_internal
 from agent_first_meeting._company_id import deterministic_company_id
 from agent_first_meeting._meeting_select import select_target_meeting
 from agent_first_meeting.config import settings
+from agent_first_meeting.tools._blob_sas import extract_blob_name
 
 logger = logging.getLogger(__name__)
 
 _MAX_ROUND_RETRY = 50
-_INTERNAL_FIELDS = {"_rid", "_self", "_etag", "_attachments", "_ts"}
 
 
 def _meeting_doc_id(company_id: str, round_num: int) -> str:
@@ -35,11 +35,7 @@ class MeetingRecordPlugin:
     """生成資料と次回アクションを meetings コンテナに保存する SK プラグイン."""
 
     def __init__(self) -> None:
-        cosmos = CosmosClient(
-            settings.cosmos_endpoint,
-            credential=settings.cosmos_key,
-        )
-        db = cosmos.get_database_client(settings.cosmos_database)
+        db = make_cosmos_client().get_database_client(settings.cosmos_database)
         self._customers = db.get_container_client("customers")
         self._meetings = db.get_container_client("meetings")
 
@@ -110,6 +106,13 @@ class MeetingRecordPlugin:
         now_iso = datetime.now(timezone.utc).isoformat()
         initial_round = self._estimate_initial_round(company_id)
 
+        # SAS トークンは時限なので、永続データには blob 名だけを保存する。
+        # 履歴を読むときに customer_history が SAS を再発行する（失効 URL を残さない）。
+        document_blob = extract_blob_name(document_url)
+        # preMeetingDocumentUrl は「失効したトークンを誤って信頼させない」よう
+        # クエリ（SAS）を落とした素の Blob URL を保存する。
+        bare_url = document_url.split("?", 1)[0] if document_url else document_url
+
         # round 番号を +1 しつつリトライ（並行 create で 409 が返ったら次の番号に進む）
         for round_num in range(initial_round, initial_round + _MAX_ROUND_RETRY):
             record = {
@@ -118,7 +121,8 @@ class MeetingRecordPlugin:
                 "round": round_num,
                 "scheduledAt": now_iso,
                 "status": "scheduled",
-                "preMeetingDocumentUrl": document_url,
+                "preMeetingDocumentUrl": bare_url,
+                "documentBlob": document_blob,
                 "proposedTitle": proposed_title,
                 "outcomes": None,
                 "nextActions": next_actions,
@@ -188,7 +192,7 @@ class MeetingRecordPlugin:
             logger.info("MeetingRecordPlugin: %s", msg)
             return msg
 
-        body = {k: v for k, v in target.items() if k not in _INTERNAL_FIELDS}
+        body = strip_internal(target)
         body["outcomes"] = outcomes
         body["status"] = "done"
         body["updatedAt"] = datetime.now(timezone.utc).isoformat()

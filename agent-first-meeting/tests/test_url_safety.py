@@ -3,7 +3,10 @@ from unittest.mock import patch
 
 import pytest
 
-from agent_first_meeting.tools._url_safety import is_safe_public_url
+from agent_first_meeting.tools._url_safety import (
+    is_safe_public_url,
+    safe_resolved_ip,
+)
 
 
 def _mock_getaddrinfo(ip: str):
@@ -73,6 +76,28 @@ def test_accepts_public_ip_resolution():
     ):
         ok, reason = is_safe_public_url("https://example.com/")
     assert ok is True, reason
+
+
+def test_safe_resolved_ip_returns_validated_public_ip():
+    """公開 IP に解決される場合、ピンニング用の IP を返す."""
+    with patch(
+        "agent_first_meeting.tools._url_safety.socket.getaddrinfo",
+        return_value=_mock_getaddrinfo("93.184.216.34"),
+    ):
+        ok, reason, ip = safe_resolved_ip("https://example.com/")
+    assert ok is True, reason
+    assert ip == "93.184.216.34"
+
+
+def test_safe_resolved_ip_blocks_internal_and_returns_none():
+    """内部 IP に解決される場合は ok=False かつ ip=None."""
+    with patch(
+        "agent_first_meeting.tools._url_safety.socket.getaddrinfo",
+        return_value=_mock_getaddrinfo("169.254.169.254"),
+    ):
+        ok, reason, ip = safe_resolved_ip("http://attacker.example.com/")
+    assert ok is False
+    assert ip is None
 
 
 def test_dns_failure_is_treated_as_unsafe():
