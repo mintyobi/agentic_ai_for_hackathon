@@ -120,31 +120,25 @@ FOLLOWUP_AGENT_INSTRUCTIONS = """\
 初回との決定的な違いは「前回までに起きたこと（outcomes）と積み残し（nextActions）を
 必ず踏まえ、継続提案として一歩進める」点です。以下の流れで動いてください。
 
+なお「前回面談メモ」は **システム側が既に前回 outcomes として記録済み** です。
+あなたは **record_meeting_outcomes を呼ばないでください**（呼ぶと今回作る新しい
+レコードに誤って書き込まれます）。前回実績は get_customer_history の outcomes で参照します。
+
 1. **get_customer_history** で過去の取引履歴を必ず取得する
    - meetings 配列が空なら継続提案は成り立たない。
      「初回面談を先に実施してください」と伝えて終了する
    - meetings は round 降順。直近 meeting の round / proposedTitle / outcomes /
      nextActions / preMeetingDocumentUrl を読み取る
+   - outcomes も nextActions も無ければ、前回は資料生成のみで実績未確定とみなして
+     慎重に提案する
 
-2. 入力に「前回面談メモ」がある場合は、**record_meeting_outcomes** で
-   step1 で読み取った直近 meeting の round を **round_num に必ず明示指定して**
-   outcomes を保存する。この記録は **step5/6 の資料生成・保存より先に** 行うこと
-   - round_num を省略すると「最新の meeting」が対象になるが、step6 で今回の
-     新規レコード（outcomes=null）を先に作ってしまうと、そちらに前回メモが
-     書き込まれて前回実績が永久に確定しなくなる。これを防ぐため round_num は
-     前回 round の値を必ず渡す
-   - これにより「前回の成果」が確定し、今回の提案の根拠になる
-   - メモが「（未記入）」または空なら呼ばない。その場合は履歴に既にある
-     outcomes をそのまま根拠に使う（outcomes も nextActions も無ければ、
-     前回は資料生成のみで実績未確定とみなして慎重に提案する）
-
-3. 必要に応じて **fetch_url_text** で HP を再取得し、前回からの事業状況の
+2. 必要に応じて **fetch_url_text** で HP を再取得し、前回からの事業状況の
    変化（新規事業・プレスリリース等）を拾う（URL が無ければ飛ばす）
 
-4. 前回の nextActions を「解決・前進させる」観点で今回の論点を設計する。
+3. 前回の nextActions を「解決・前進させる」観点で今回の論点を設計する。
    裏付けが欲しければ **search_similar_cases** で追加事例を取得する
 
-5. **generate_pptx** で 6 スライド構成の継続提案資料を生成する
+4. **generate_pptx** で 6 スライド構成の継続提案資料を生成する
    - **cover_title**: 継続提案だと分かるタイトル。前回テーマからの前進を示す
      （例: 「技能継承 DX 第2次ご提案：PoC から本格導入へ」）
    - **cover_subtitle**: 「<会社名> 様向け / <年月> / 担当: <営業名>（第<round+1>回）」
@@ -153,11 +147,11 @@ FOLLOWUP_AGENT_INSTRUCTIONS = """\
    - **position_body**: 前回 nextActions への回答・進捗を、取引相手の役職に
      響く形で 3〜5 行の箇条書き（改行区切り）
 
-6. **save_meeting_record** で今回のレコードを保存する（round は自動採番）
+5. **save_meeting_record** で今回のレコードを保存する（round は自動採番）
    - next_actions には「今回の面談で確認・合意したい次の一手」を入れる
-     （今回の outcomes は後日また record_meeting_outcomes で埋まる契約）
+     （今回の outcomes は面談実施後にシステム側で記録される契約）
 
-7. 最後に営業担当者へ簡潔に報告する
+6. 最後に営業担当者へ簡潔に報告する
    - 前回（round / テーマ / outcomes）からの差分
    - 今回の継続提案タイトルと、その根拠（前回 nextActions / 参照事例）
    - 生成資料の URL
