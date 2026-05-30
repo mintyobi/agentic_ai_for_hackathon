@@ -3,6 +3,7 @@
 Azure / Semantic Kernel に依存せず、python-pptx だけでローカル実行可能。
 """
 from io import BytesIO
+from pathlib import Path
 
 from pptx import Presentation
 
@@ -12,6 +13,9 @@ from agent_first_meeting.tools._pptx_builder import (
     DEFAULT_PRODUCT_PRICE_JPY,
     build_presentation_bytes,
 )
+
+# tests/ → agent-first-meeting/ → templates/default.pptx
+_DEFAULT_TEMPLATE = Path(__file__).resolve().parents[1] / "templates" / "default.pptx"
 
 # 全テストで使う最小ペイロード
 SAMPLE_KWARGS = dict(
@@ -124,3 +128,44 @@ def test_agenda_items_are_rendered_in_table_of_contents():
     toc_text = toc_slide.placeholders[1].text
     for item in AGENDA_ITEMS:
         assert item in toc_text
+
+
+# ---------- テンプレ（自社フォーマット）モード ----------
+
+def _open_with_template() -> Presentation:
+    """templates/default.pptx を使って生成した PPTX を返す."""
+    data = build_presentation_bytes(
+        **SAMPLE_KWARGS, template_path=str(_DEFAULT_TEMPLATE)
+    )
+    return Presentation(BytesIO(data))
+
+
+def test_template_mode_produces_six_slides():
+    """テンプレ経路でも 6 スライド生成されること（テンプレ内見本スライドは除去される）."""
+    assert _DEFAULT_TEMPLATE.exists(), f"{_DEFAULT_TEMPLATE} が存在しない"
+    prs = _open_with_template()
+    assert len(prs.slides) == 6
+
+
+def test_template_mode_uses_named_layouts():
+    """default.pptx では表紙が "Cover"（命名）、本文は fallback の "Title and Content" を使うこと.
+
+    自社の独自デザインを当てたい場合は、対象レイアウトを PowerPoint で複製し
+    Agenda / Industry / Position / Product / Cost に改名すれば本コードが自動で拾う。
+    """
+    prs = _open_with_template()
+    actual_names = [slide.slide_layout.name for slide in prs.slides]
+    assert actual_names[0] == "Cover"
+    # 本文5枚は標準名 "Title and Content" にフォールバックして同一レイアウトを共有
+    assert actual_names[1:] == ["Title and Content"] * 5
+
+
+def test_template_mode_content_matches_no_template():
+    """テンプレ経路でも、表紙タイトル・本文・商品名などの内容が同等に流し込まれること."""
+    prs = _open_with_template()
+    assert prs.slides[0].shapes.title.text == SAMPLE_KWARGS["cover_title"]
+    assert prs.slides[0].placeholders[1].text == SAMPLE_KWARGS["cover_subtitle"]
+    industry_body = prs.slides[2].placeholders[1].text
+    assert "ベテラン技術者の高齢化" in industry_body
+    cost_body = prs.slides[5].placeholders[1].text
+    assert DEFAULT_PRODUCT_NAME in cost_body

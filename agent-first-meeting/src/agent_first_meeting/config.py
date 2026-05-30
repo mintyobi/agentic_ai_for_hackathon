@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     # 完全に断ちたい場合は false にする（エージェントから fetch ツールを外す）。
     web_fetch_enabled: bool = True
 
+    # PPTX テンプレート（自社フォーマット）。
+    # `templates_dir`/`<default_template_id>.pptx` を読み込み、レイアウト名
+    # （Cover/Agenda/Industry/Position/Product/Cost）または既定の
+    # python-pptx 標準レイアウト名で各スライドの見た目を切り替える。
+    # 未設定の場合はテンプレ無し（現行の python-pptx 既定 Presentation()）。
+    default_template_id: str | None = None
+    templates_dir: str = "templates"
+
     # App
     app_log_level: str = "INFO"
     # CORS で受け付けるオリジン（カンマ区切り）。本番では Streamlit / フロントの

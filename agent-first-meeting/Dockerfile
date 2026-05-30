@@ -13,6 +13,8 @@ WORKDIR /app
 # （.dockerignore で .env / .venv / tests / scripts などは除外）
 COPY pyproject.toml ./
 COPY src ./src
+# 自社フォーマットの PPTX テンプレートを含める（DEFAULT_TEMPLATE_ID で参照）
+COPY templates ./templates
 RUN pip install .
 
 # 非 root 実行（セキュリティ・ハードニング）

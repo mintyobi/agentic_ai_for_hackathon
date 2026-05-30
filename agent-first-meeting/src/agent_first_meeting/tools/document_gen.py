@@ -6,6 +6,7 @@ Blob アップロードと SAS 発行は `_blob_sas` に分離。本ファイル
 """
 import logging
 import uuid
+from pathlib import Path
 from typing import Annotated
 
 from semantic_kernel.functions import kernel_function
@@ -20,6 +21,28 @@ from agent_first_meeting.tools._pptx_builder import build_presentation_bytes
 logger = logging.getLogger(__name__)
 
 
+def _resolve_template_path() -> str | None:
+    """`DEFAULT_TEMPLATE_ID` から実ファイルパスを解決する.
+
+    - 設定が無ければ None（テンプレ無し＝python-pptx 既定の見た目）
+    - 相対パスは `agent-first-meeting/` をベースに解決（コンテナでは /app/）
+    - 見つからなければ警告して None フォールバック（処理は止めない）
+    """
+    template_id = settings.default_template_id
+    if not template_id:
+        return None
+    base_dir = Path(settings.templates_dir)
+    if not base_dir.is_absolute():
+        # tools/document_gen.py → parents[3] = agent-first-meeting/
+        base_dir = Path(__file__).resolve().parents[3] / base_dir
+    path = base_dir / f"{template_id}.pptx"
+    if not path.exists():
+        logger.warning("PPTX template not found: %s (using default look)", path)
+        return None
+    logger.info("PPTX template: %s", path)
+    return str(path)
+
+
 class DocumentGenPlugin:
     """6 スライド構成の PowerPoint を生成し Blob にアップロードする SK プラグイン."""
 
@@ -27,6 +50,8 @@ class DocumentGenPlugin:
         svc = make_blob_service_client()
         self._signer = BlobSasSigner(svc)
         self._container = svc.get_container_client(settings.blob_container)
+        # 自社フォーマット（.pptx テンプレ）。設定が無ければ None＝既定の見た目
+        self._template_path = _resolve_template_path()
 
     @kernel_function(
         description=(
@@ -70,6 +95,7 @@ class DocumentGenPlugin:
             position_body=position_body,
             product_name=settings.default_product_name,
             product_price_jpy=settings.default_product_price_jpy,
+            template_path=self._template_path,
         )
 
         blob_name = f"proposals/{uuid.uuid4().hex}.pptx"
